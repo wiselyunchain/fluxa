@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, users, wallets, transactions, fiatRequests, riskFlags, Wallet, Transaction, FiatRequest, RiskFlag } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -30,12 +30,18 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   }
 
   try {
+    // Generate default username and email if not provided
+    const defaultUsername = `user_${user.openId.substring(0, 8)}`;
+    const defaultEmail = `${user.openId}@fluxa.local`;
+
     const values: InsertUser = {
       openId: user.openId,
+      username: user.username || defaultUsername,
+      email: user.email || defaultEmail,
     };
     const updateSet: Record<string, unknown> = {};
 
-    const textFields = ["name", "email", "loginMethod"] as const;
+    const textFields = ["name", "phone", "loginMethod"] as const;
     type TextField = (typeof textFields)[number];
 
     const assignNullable = (field: TextField) => {
@@ -89,4 +95,38 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+export async function getUserWallets(userId: number): Promise<Wallet[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(wallets).where(eq(wallets.userId, userId));
+}
+
+export async function getWalletByAddress(address: string): Promise<Wallet | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(wallets).where(eq(wallets.address, address)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserTransactions(userId: number, limit: number = 50): Promise<Transaction[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(transactions).where(eq(transactions.userId, userId)).limit(limit);
+}
+
+export async function getUserFiatRequests(userId: number): Promise<FiatRequest[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(fiatRequests).where(eq(fiatRequests.userId, userId));
+}
+
+export async function getUserRiskFlags(userId: number): Promise<RiskFlag[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select().from(riskFlags).where(and(eq(riskFlags.userId, userId), eq(riskFlags.resolved, false)));
+}

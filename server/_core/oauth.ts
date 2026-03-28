@@ -30,8 +30,9 @@ export function registerOAuthRoutes(app: Express) {
 
       await db.upsertUser({
         openId: userInfo.openId,
+        username: `user_${userInfo.openId.substring(0, 8)}`,
+        email: userInfo.email || `${userInfo.openId}@fluxa.local`,
         name: userInfo.name || null,
-        email: userInfo.email ?? null,
         loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
         lastSignedIn: new Date(),
       });

@@ -277,7 +277,8 @@ class SDKServer {
         await db.upsertUser({
           openId: userInfo.openId,
           name: userInfo.name || null,
-          email: userInfo.email ?? null,
+          username: `user_${userInfo.openId.substring(0, 8)}`,
+          email: userInfo.email || `${userInfo.openId}@fluxa.local`,
           loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
           lastSignedIn: signedInAt,
         });
@@ -294,6 +295,8 @@ class SDKServer {
 
     await db.upsertUser({
       openId: user.openId,
+      username: user.username,
+      email: user.email,
       lastSignedIn: signedInAt,
     });
 
