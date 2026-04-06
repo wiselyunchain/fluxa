@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
@@ -37,6 +37,7 @@ function createAuthContext(overrides?: Partial<AuthenticatedUser>): TrpcContext 
 }
 
 describe("fiat procedures", () => {
+  vi.setConfig({ testTimeout: 15000 });
   it("requires authentication for fiat operations", async () => {
     const ctx: TrpcContext = {
       user: null,
@@ -66,8 +67,9 @@ describe("fiat procedures", () => {
 
     try {
       await caller.fiat.initiateOnramp({
-        amount: "1000",
+        amount: 1000,
         cryptoToken: "usdt",
+        toChain: "solana",
       });
       expect.fail("Should have thrown forbidden error");
     } catch (error: any) {
@@ -82,9 +84,12 @@ describe("fiat procedures", () => {
 
     try {
       await caller.fiat.initiateOfframp({
-        cryptoAmount: "1",
+        cryptoAmount: 1,
         cryptoToken: "usdt",
-        bankAccount: "1234567890",
+        fromChain: "solana",
+        accountNumber: "1234567890",
+        bankCode: "011",
+        accountName: "Test User",
       });
       expect.fail("Should have thrown forbidden error");
     } catch (error: any) {

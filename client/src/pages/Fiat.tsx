@@ -1,4 +1,3 @@
-import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,6 +8,8 @@ import { trpc } from "@/lib/trpc";
 import { Download, Send, AlertCircle, CheckCircle } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useAuth } from "@/_core/hooks/useAuth";
+
 
 export default function Fiat() {
   const { user, isAuthenticated } = useAuth();
@@ -33,8 +34,9 @@ export default function Fiat() {
 
     try {
       const result = await initiateOnrampMutation.mutateAsync({
-        amount: onrampAmount,
+        amount: parseFloat(onrampAmount),
         cryptoToken: onrampToken as any,
+        toChain: "solana",
       });
 
       toast.success("Payment request created!");
@@ -52,9 +54,12 @@ export default function Fiat() {
 
     try {
       const result = await initiateOfframpMutation.mutateAsync({
-        cryptoAmount: offrampAmount,
+        cryptoAmount: parseFloat(offrampAmount),
         cryptoToken: offrampToken as any,
-        bankAccount,
+        fromChain: "solana",
+        accountNumber: bankAccount.substring(0, 10),
+        bankCode: "011",
+        accountName: user?.name || "User",
       });
 
       toast.success("Withdrawal initiated!");

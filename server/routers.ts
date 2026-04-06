@@ -9,12 +9,14 @@ import { eq } from "drizzle-orm";
 import { fiatRouter } from "./fiat";
 import { swapRouter } from "./swap";
 import { adminRouter } from "./admin";
+import { walletRouter } from "./wallet-procedures";
 
 export const appRouter = router({
   system: systemRouter,
   fiat: fiatRouter,
   swap: swapRouter,
   admin: adminRouter,
+  wallet: walletRouter,
   
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
