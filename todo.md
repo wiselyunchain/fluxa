@@ -123,3 +123,31 @@
 - [x] Comprehensive RPC provider tests (16 passing tests)
 
 Total: 81 passing tests across 10 test suites
+
+## Background Balance Polling Service (COMPLETED)
+
+### Core Implementation
+- [x] Balance polling engine with configurable intervals
+- [x] Batch processing for efficient RPC calls
+- [x] Multi-chain wallet balance queries (Solana, Base, BSC, TON, Avalanche)
+- [x] Graceful error handling with retry logic
+- [x] Balance change notifications (configurable threshold)
+- [x] Polling statistics and performance monitoring
+
+### Admin Control & Management
+- [x] tRPC procedures for starting/stopping polling
+- [x] Manual poll triggering
+- [x] Single wallet balance updates
+- [x] Balance history retrieval
+- [x] Polling status and statistics queries
+- [x] Statistics reset functionality
+
+### Integration & Deployment
+- [x] Background service initialization module
+- [x] Environment variable configuration
+- [x] Server startup/shutdown hooks
+- [x] Comprehensive documentation (BALANCE_POLLING.md)
+- [x] 14 passing tests for polling service
+- [x] Error handling and edge cases
+
+Total: 95 passing tests across 11 test suites

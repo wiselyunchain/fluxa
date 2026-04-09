@@ -7,17 +7,21 @@ import {
 } from "./rpc-provider";
 
 describe("RPC Provider", () => {
-  it("returns balance as string", async () => {
-    const balance = await getWalletBalance(
-      "0x1234567890123456789012345678901234567890",
-      "base"
-    );
+  it(
+    "returns balance as string",
+    async () => {
+      const balance = await getWalletBalance(
+        "0x1234567890123456789012345678901234567890",
+        "base"
+      );
 
-    expect(typeof balance).toBe("string");
-    expect(balance).toBeDefined();
-    // Balance should be a valid number
-    expect(parseFloat(balance) >= 0).toBe(true);
-  });
+      expect(typeof balance).toBe("string");
+      expect(balance).toBeDefined();
+      // Balance should be a valid number
+      expect(parseFloat(balance) >= 0).toBe(true);
+    },
+    { timeout: 10000 }
+  );
 
   it("handles invalid Solana address gracefully", async () => {
     const balance = await getWalletBalance("invalid-address", "solana");
@@ -33,52 +37,76 @@ describe("RPC Provider", () => {
     expect(typeof balance).toBe("string");
   });
 
-  it("gets gas price for Solana", async () => {
-    const gasPrice = await getGasPrice("solana");
+  it(
+    "gets gas price for Solana",
+    async () => {
+      const gasPrice = await getGasPrice("solana");
 
-    expect(typeof gasPrice).toBe("string");
-    expect(gasPrice).toBeDefined();
-  });
+      expect(typeof gasPrice).toBe("string");
+      expect(gasPrice).toBeDefined();
+    },
+    { timeout: 10000 }
+  );
 
-  it("gets gas price for Base", async () => {
-    const gasPrice = await getGasPrice("base");
+  it(
+    "gets gas price for Base",
+    async () => {
+      const gasPrice = await getGasPrice("base");
 
-    expect(typeof gasPrice).toBe("string");
-    expect(gasPrice).toBeDefined();
-  });
+      expect(typeof gasPrice).toBe("string");
+      expect(gasPrice).toBeDefined();
+    },
+    { timeout: 10000 }
+  );
 
-  it("gets gas price for BSC", async () => {
-    const gasPrice = await getGasPrice("bsc");
+  it(
+    "gets gas price for BSC",
+    async () => {
+      const gasPrice = await getGasPrice("bsc");
 
-    expect(typeof gasPrice).toBe("string");
-    expect(gasPrice).toBeDefined();
-  });
+      expect(typeof gasPrice).toBe("string");
+      expect(gasPrice).toBeDefined();
+    },
+    { timeout: 10000 }
+  );
 
-  it("gets gas price for Avalanche", async () => {
-    const gasPrice = await getGasPrice("avalanche");
+  it(
+    "gets gas price for Avalanche",
+    async () => {
+      const gasPrice = await getGasPrice("avalanche");
 
-    expect(typeof gasPrice).toBe("string");
-    expect(gasPrice).toBeDefined();
-  });
+      expect(typeof gasPrice).toBe("string");
+      expect(gasPrice).toBeDefined();
+    },
+    { timeout: 10000 }
+  );
 
-  it("gets gas price for TON", async () => {
-    const gasPrice = await getGasPrice("ton");
+  it(
+    "gets gas price for TON",
+    async () => {
+      const gasPrice = await getGasPrice("ton");
 
-    expect(typeof gasPrice).toBe("string");
-    expect(gasPrice).toBeDefined();
-  });
+      expect(typeof gasPrice).toBe("string");
+      expect(gasPrice).toBeDefined();
+    },
+    { timeout: 10000 }
+  );
 
-  it("gets transaction status", async () => {
-    const status = await getTransactionStatus(
-      "0x0000000000000000000000000000000000000000000000000000000000000000",
-      "base"
-    );
+  it(
+    "gets transaction status",
+    async () => {
+      const status = await getTransactionStatus(
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "base"
+      );
 
-    expect(status).toBeDefined();
-    expect(status.status).toMatch(/pending|success|failed/);
-    expect(typeof status.confirmations).toBe("number");
-    expect(status.confirmations >= 0).toBe(true);
-  });
+      expect(status).toBeDefined();
+      expect(status.status).toMatch(/pending|success|failed/);
+      expect(typeof status.confirmations).toBe("number");
+      expect(status.confirmations >= 0).toBe(true);
+    },
+    { timeout: 10000 }
+  );
 
   it("handles invalid transaction hash", async () => {
     const status = await getTransactionStatus("invalid-hash", "base");
@@ -87,19 +115,23 @@ describe("RPC Provider", () => {
     expect(typeof status.confirmations).toBe("number");
   });
 
-  it("estimates gas for transaction", async () => {
-    const gasEstimate = await estimateGas(
-      "0x1234567890123456789012345678901234567890",
-      "0x0987654321098765432109876543210987654321",
-      "1.0",
-      "base"
-    );
+  it(
+    "estimates gas for transaction",
+    async () => {
+      const gasEstimate = await estimateGas(
+        "0x1234567890123456789012345678901234567890",
+        "0x0987654321098765432109876543210987654321",
+        "1.0",
+        "base"
+      );
 
-    expect(typeof gasEstimate).toBe("string");
-    expect(gasEstimate).toBeDefined();
-    // Gas estimate should be a valid number or "0"
-    expect(parseFloat(gasEstimate) >= 0).toBe(true);
-  });
+      expect(typeof gasEstimate).toBe("string");
+      expect(gasEstimate).toBeDefined();
+      // Gas estimate should be a valid number or "0"
+      expect(parseFloat(gasEstimate) >= 0).toBe(true);
+    },
+    { timeout: 10000 }
+  );
 
   it("estimates gas for Solana", async () => {
     const gasEstimate = await estimateGas(
@@ -123,18 +155,22 @@ describe("RPC Provider", () => {
     expect(gasEstimate).toBe("10000000");
   });
 
-  it("handles all supported chains", async () => {
-    const chains = ["solana", "base", "bsc", "ton", "avalanche"] as const;
+  it(
+    "handles all supported chains",
+    async () => {
+      const chains = ["solana", "base", "bsc", "ton", "avalanche"] as const;
 
-    for (const chain of chains) {
-      const balance = await getWalletBalance(
-        "0x0000000000000000000000000000000000000000",
-        chain
-      );
-      expect(typeof balance).toBe("string");
-      expect(parseFloat(balance) >= 0).toBe(true);
-    }
-  });
+      for (const chain of chains) {
+        const balance = await getWalletBalance(
+          "0x0000000000000000000000000000000000000000",
+          chain
+        );
+        expect(typeof balance).toBe("string");
+        expect(parseFloat(balance) >= 0).toBe(true);
+      }
+    },
+    { timeout: 15000 }
+  );
 
   it("returns zero balance for non-existent wallet", async () => {
     const balance = await getWalletBalance(

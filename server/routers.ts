@@ -10,6 +10,7 @@ import { fiatRouter } from "./fiat";
 import { swapRouter } from "./swap";
 import { adminRouter } from "./admin";
 import { walletRouter } from "./wallet-procedures";
+import { balanceRouter } from "./balance-procedures";
 
 export const appRouter = router({
   system: systemRouter,
@@ -17,6 +18,7 @@ export const appRouter = router({
   swap: swapRouter,
   admin: adminRouter,
   wallet: walletRouter,
+  balance: balanceRouter,
   
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
