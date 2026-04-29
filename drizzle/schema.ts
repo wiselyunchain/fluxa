@@ -127,3 +127,67 @@ export const auditLogs = mysqlTable("auditLogs", {
 
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = typeof auditLogs.$inferInsert;
+
+// Solana wallets for users (Umbra integration)
+export const solanaWallets = mysqlTable("solana_wallets", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  publicKey: varchar("publicKey", { length: 88 }).notNull().unique(),
+  encryptedPrivateKey: text("encryptedPrivateKey").notNull(),
+  x25519Key: text("x25519Key").notNull(), // for Umbra
+  umbraRegistered: boolean("umbraRegistered").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SolanaWallet = typeof solanaWallets.$inferSelect;
+export type InsertSolanaWallet = typeof solanaWallets.$inferInsert;
+
+// Umbra encrypted balances
+export const umbraEncryptedBalances = mysqlTable("umbra_encrypted_balances", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  token: varchar("token", { length: 50 }).notNull(), // 'USDT', 'USDC', etc
+  encryptedAmount: text("encryptedAmount"), // encrypted balance reference
+  lastSyncedAt: timestamp("lastSyncedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => [index("idx_userId_token").on(table.userId, table.token)]);
+
+export type UmbraEncryptedBalance = typeof umbraEncryptedBalances.$inferSelect;
+export type InsertUmbraEncryptedBalance = typeof umbraEncryptedBalances.$inferInsert;
+
+// Umbra UTXO mixer tracking (for anonymous transfers)
+export const umbraUtxos = mysqlTable("umbra_utxos", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  transactionId: int("transactionId"),
+  token: varchar("token", { length: 50 }).notNull(),
+  amount: decimal("amount", { precision: 20, scale: 8 }).notNull(),
+  commitment: varchar("commitment", { length: 255 }).notNull(), // Merkle tree commitment
+  recipient: varchar("recipient", { length: 88 }).notNull(), // recipient's Solana address
+  claimed: boolean("claimed").default(false).notNull(),
+  claimProof: text("claimProof"), // ZK proof
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  claimedAt: timestamp("claimedAt"),
+}, (table) => [index("idx_userId_claimed").on(table.userId, table.claimed)]);
+
+export type UmbraUtxo = typeof umbraUtxos.$inferSelect;
+export type InsertUmbraUtxo = typeof umbraUtxos.$inferInsert;
+
+// Paj Cash transactions (NGN ↔ USDT settlement)
+export const pajCashTransactions = mysqlTable("paj_cash_transactions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  type: mysqlEnum("type", ["deposit", "withdrawal"]).notNull(),
+  direction: mysqlEnum("direction", ["naira_to_usdt", "usdt_to_naira"]).notNull(),
+  nairaAmount: decimal("nairaAmount", { precision: 15, scale: 2 }),
+  usdtAmount: decimal("usdtAmount", { precision: 20, scale: 8 }),
+  userBankAccount: varchar("userBankAccount", { length: 255 }),
+  pajCashReference: varchar("pajCashReference", { length: 255 }).unique(),
+  status: mysqlEnum("status", ["pending", "confirmed", "failed"]).default("pending").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  confirmedAt: timestamp("confirmedAt"),
+}, (table) => [index("idx_userId_type").on(table.userId, table.type)]);
+
+export type PajCashTransaction = typeof pajCashTransactions.$inferSelect;
+export type InsertPajCashTransaction = typeof pajCashTransactions.$inferInsert;
