@@ -6,8 +6,8 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
-import Fiat from "./pages/Fiat";
-import Swap from "./pages/Swap";
+import Deposit from "./pages/Deposit";
+import Withdraw from "./pages/Withdraw";
 import History from "./pages/History";
 import AdminDashboard from "./pages/AdminDashboard";
 
@@ -17,8 +17,8 @@ function Router() {
     <Switch>
       <Route path={"/"} component={Home} />
       <Route path={"/dashboard"} component={Dashboard} />
-      <Route path={"/fiat"} component={Fiat} />
-      <Route path={"/swap"} component={Swap} />
+      <Route path={"/deposit"} component={Deposit} />
+      <Route path={"/withdraw"} component={Withdraw} />
       <Route path={"/history"} component={History} />
       <Route path={"/admin"} component={AdminDashboard} />
       <Route path={"/404"} component={NotFound} />

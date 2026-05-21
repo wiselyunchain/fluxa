@@ -1,6 +1,6 @@
 import { eq, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, wallets, transactions, fiatRequests, riskFlags, Wallet, Transaction, FiatRequest, RiskFlag } from "../drizzle/schema";
+import { InsertUser, users, solanaWallets, userTransactions, fiatRequests, riskFlags, SolanaWallet, UserTransaction, FiatRequest, RiskFlag } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -95,26 +95,26 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function getUserWallets(userId: number): Promise<Wallet[]> {
+export async function getUserWallets(userId: number): Promise<SolanaWallet[]> {
   const db = await getDb();
   if (!db) return [];
 
-  return db.select().from(wallets).where(eq(wallets.userId, userId));
+  return db.select().from(solanaWallets).where(eq(solanaWallets.userId, userId));
 }
 
-export async function getWalletByAddress(address: string): Promise<Wallet | undefined> {
+export async function getWalletByAddress(address: string): Promise<SolanaWallet | undefined> {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.select().from(wallets).where(eq(wallets.address, address)).limit(1);
+  const result = await db.select().from(solanaWallets).where(eq(solanaWallets.mainAddress, address)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function getUserTransactions(userId: number, limit: number = 50): Promise<Transaction[]> {
+export async function getUserTransactions(userId: number, limit: number = 50): Promise<UserTransaction[]> {
   const db = await getDb();
   if (!db) return [];
 
-  return db.select().from(transactions).where(eq(transactions.userId, userId)).limit(limit);
+  return db.select().from(userTransactions).where(eq(userTransactions.userId, userId)).limit(limit);
 }
 
 export async function getUserFiatRequests(userId: number): Promise<FiatRequest[]> {

@@ -3,10 +3,10 @@ import { useLocation } from "wouter";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
-import { Wallet, Plus, TrendingUp, Send, Download } from "lucide-react";
+import { Shield, ShieldCheck, Wallet, ArrowDownToLine, ArrowUpFromLine, Repeat } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import IntentInput from "@/components/IntentInput";
 
 export default function Dashboard() {
   const { user, loading, isAuthenticated } = useAuth();
@@ -18,11 +18,16 @@ export default function Dashboard() {
     }
   }, [loading, isAuthenticated, navigate]);
 
-  const { data: wallets, isLoading: walletsLoading } = trpc.auth.getWallets.useQuery(undefined, {
+  const { data: wallet, isLoading: walletLoading } = trpc.auth.getWallet.useQuery(undefined, {
     enabled: isAuthenticated,
   });
 
-  const createWalletMutation = trpc.auth.createWallet.useMutation();
+  const createWalletMutation = trpc.auth.createWallet.useMutation({
+    onSuccess: () => {
+      // Refresh wallet after creation
+      window.location.reload();
+    }
+  });
 
   if (loading) {
     return (
@@ -42,205 +47,87 @@ export default function Dashboard() {
     return null;
   }
 
-  const handleCreateWallet = async (chain: "solana" | "base" | "bsc" | "ton" | "avalanche") => {
-    try {
-      await createWalletMutation.mutateAsync({ chain });
-    } catch (error) {
-      console.error("Failed to create wallet:", error);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-background">
-      <div className="container py-8">
+      <div className="container py-8 max-w-4xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Welcome, {user.name || user.username}</h1>
-          <p className="text-muted-foreground">Manage your multi-chain crypto wallets and transactions</p>
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground mb-2">Welcome, {user.name || user.username}</h1>
+            <p className="text-muted-foreground">Privacy-First Crypto ↔ NGN Exchange</p>
+          </div>
+          <div className="flex items-center gap-2 bg-green-500/10 text-green-500 px-4 py-2 rounded-full border border-green-500/20">
+            <ShieldCheck className="w-5 h-5" />
+            <span className="font-medium text-sm">Privacy Active</span>
+          </div>
         </div>
 
         {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Total Balance</CardTitle>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+          <Card className="bg-card shadow-sm border-border">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <Wallet className="w-4 h-4" />
+                Solana Settlement Balance
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-foreground">$0.00</div>
-              <p className="text-xs text-muted-foreground mt-1">Across all chains</p>
+              {walletLoading ? (
+                <Skeleton className="h-8 w-32" />
+              ) : wallet ? (
+                <>
+                  <div className="text-3xl font-bold text-foreground">{wallet.balance} SOL</div>
+                  <p className="text-xs text-muted-foreground mt-1 font-mono">{wallet.mainAddress.substring(0, 8)}...{wallet.mainAddress.substring(wallet.mainAddress.length - 8)}</p>
+                </>
+              ) : (
+                <div className="flex flex-col items-start gap-3">
+                  <p className="text-sm text-muted-foreground">No private wallet active</p>
+                  <Button size="sm" onClick={() => createWalletMutation.mutate()} disabled={createWalletMutation.isPending}>
+                    {createWalletMutation.isPending ? "Activating..." : "Activate Privacy Wallet"}
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Daily Limit</CardTitle>
+          <Card className="bg-card shadow-sm border-border">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <Shield className="w-4 h-4" />
+                Privacy Guarantees
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-foreground">₦{parseFloat(user.dailyTransactionLimit || "1000000").toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground mt-1">Remaining today</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Account Status</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className={`text-2xl font-bold ${user.accountFrozen ? "text-destructive" : "text-accent"}`}>
-                {user.accountFrozen ? "Frozen" : "Active"}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">KYC: {user.kycStatus}</p>
+              <ul className="text-sm space-y-2 text-foreground/80">
+                <li className="flex items-center gap-2">✓ Amounts hidden on-chain via Magic Block</li>
+                <li className="flex items-center gap-2">✓ Stealth receiving addresses via Umbra</li>
+                <li className="flex items-center gap-2">✓ Universal token routing via NEAR Intents</li>
+              </ul>
             </CardContent>
           </Card>
         </div>
 
-        {/* Main Content */}
-        <Tabs defaultValue="wallets" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="wallets">Wallets</TabsTrigger>
-            <TabsTrigger value="swap" asChild><a href="/swap">Swap</a></TabsTrigger>
-            <TabsTrigger value="onramp" asChild><a href="/fiat">On-Ramp</a></TabsTrigger>
-            <TabsTrigger value="history" asChild><a href="/history">History</a></TabsTrigger>
-          </TabsList>
+        {/* Intent Input */}
+        <div className="mb-12">
+          <IntentInput />
+        </div>
 
-          {/* Wallets Tab */}
-          <TabsContent value="wallets" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Wallet className="w-5 h-5" />
-                  Multi-Chain Wallets
-                </CardTitle>
-                <CardDescription>
-                  Create and manage wallets across Solana, Base, BSC, TON, and Avalanche
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {walletsLoading ? (
-                  <div className="space-y-2">
-                    <Skeleton className="h-16" />
-                    <Skeleton className="h-16" />
-                  </div>
-                ) : (
-                  <>
-                    {wallets && wallets.length > 0 ? (
-                      <div className="space-y-3">
-                        {wallets.map((wallet) => (
-                          <Card key={wallet.id} className="bg-card/50">
-                            <CardContent className="pt-6">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="font-semibold text-foreground capitalize">{wallet.chain}</p>
-                                  <p className="text-sm text-muted-foreground font-mono truncate">{wallet.address}</p>
-                                </div>
-                                <div className="text-right">
-                                  <p className="font-semibold text-foreground">{wallet.balance} {wallet.chain.toUpperCase()}</p>
-                                  <div className="flex gap-2 mt-2">
-                                    <Button size="sm" variant="outline" className="gap-1">
-                                      <Download className="w-4 h-4" />
-                                      Deposit
-                                    </Button>
-                                    <Button size="sm" variant="outline" className="gap-1">
-                                      <Send className="w-4 h-4" />
-                                      Withdraw
-                                    </Button>
-                                  </div>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-8">
-                        <Wallet className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-50" />
-                        <p className="text-muted-foreground mb-4">No wallets yet</p>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* Create Wallet Buttons */}
-                <div className="pt-4 border-t">
-                  <p className="text-sm font-medium text-foreground mb-3">Create New Wallet</p>
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                    {["solana", "base", "bsc", "ton", "avalanche"].map((chain) => (
-                      <Button
-                        key={chain}
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleCreateWallet(chain as any)}
-                        disabled={createWalletMutation.isPending}
-                        className="gap-1"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span className="hidden sm:inline capitalize">{chain}</span>
-                        <span className="sm:hidden capitalize">{chain.substring(0, 3)}</span>
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Swap Tab */}
-          <TabsContent value="swap">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5" />
-                  Swap Crypto
-                </CardTitle>
-                <CardDescription>
-                  Swap tokens across multiple blockchains instantly
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8 text-muted-foreground">
-                  Swap feature coming soon
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* On-Ramp Tab */}
-          <TabsContent value="onramp">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Download className="w-5 h-5" />
-                  Buy Crypto with NGN
-                </CardTitle>
-                <CardDescription>
-                  Convert Nigerian Naira to crypto instantly
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8 text-muted-foreground">
-                  On-ramp feature coming soon
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* History Tab */}
-          <TabsContent value="history">
-            <Card>
-              <CardHeader>
-                <CardTitle>Transaction History</CardTitle>
-                <CardDescription>
-                  Your private transaction history (visible only to you)
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8 text-muted-foreground">
-                  No transactions yet
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+        {/* Quick Actions */}
+        <h2 className="text-xl font-bold mb-4">Quick Actions</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Button variant="outline" className="h-24 flex flex-col gap-2 items-center justify-center border-border hover:bg-accent hover:text-accent-foreground" onClick={() => navigate('/deposit')}>
+            <ArrowDownToLine className="w-6 h-6" />
+            <span>Deposit NGN</span>
+          </Button>
+          <Button variant="outline" className="h-24 flex flex-col gap-2 items-center justify-center border-border hover:bg-accent hover:text-accent-foreground" onClick={() => navigate('/withdraw')}>
+            <ArrowUpFromLine className="w-6 h-6" />
+            <span>Withdraw to Bank</span>
+          </Button>
+          <Button variant="outline" className="h-24 flex flex-col gap-2 items-center justify-center border-border hover:bg-accent hover:text-accent-foreground" onClick={() => navigate('/history')}>
+            <Repeat className="w-6 h-6" />
+            <span>Transaction History</span>
+          </Button>
+        </div>
       </div>
     </div>
   );
