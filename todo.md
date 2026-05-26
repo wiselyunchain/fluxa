@@ -1,153 +1,96 @@
-# FluxaX MVP - Project TODO
+# FluxaX V2 - TODO
 
-## Phase 1: Project Setup & Database Schema
-- [x] Design system and Tailwind configuration with elegant color palette
-- [x] Database schema for users, wallets, transactions, and admin controls
-- [x] Environment variables and secrets configuration
+> V2 architecture: privacy-first NGN ↔ crypto bridge built on Solana, with Umbra for stealth addresses / ZK claim proofs, Paj Cash for NGN settlement, NEAR Intent for cross-chain routing, and Magic Block for private routing. The V1 multi-chain wallet / Paystack / LI.FI MVP was torn down in commit `240514f`; what's checked in now is the V2 scaffold (mostly stubs).
 
-## Phase 2: Authentication & Authorization
-- [x] User signup/login with email and password (via Manus OAuth)
-- [x] Phone verification (optional, Nigeria focus)
-- [x] Username creation and profile management
-- [x] Role-based access control (user vs admin)
-- [x] Session management and secure cookies
+## 0. Reconciliation work (do this first)
 
-## Phase 3: User Dashboard & Wallet
-- [x] Multi-chain wallet support (Solana, Base, BSC, TON, Avalanche)
-- [x] Wallet address generation per chain (mock implementation)
-- [x] Balance display and real-time updates (UI framework)
-- [ ] Deposit interface with QR code generation
-- [ ] Withdrawal interface with confirmation
+The teardown left the codebase in a state that doesn't build cleanly. Measured test state: **30 pass / 29 fail (59 total)** via `npx vitest run`.
 
-## Phase 4: On-Ramp & Off-Ramp
-- [x] NGN to crypto on-ramp flow (Paystack/Flutterwave integration - mock)
-- [x] Crypto to NGN off-ramp flow
-- [x] Payment request/virtual account generation
-- [x] Instant crypto credit on deposit (framework)
-- [x] Bank transfer confirmation (framework)
+- [ ] Rewrite `server/umbra.test.ts` to match the current `UmbraClient` surface (or restore the deleted `initializeUmbraClient`, `registerUmbraUser`, `depositToEncryptedBalance`, `withdrawFromEncryptedBalance`, `createReceiverClaimableUtxo`, `fetchClaimableUtxos`, `claimUtxoToEncryptedBalance`, `calculateUmbraFee`, `UMBRA_SUPPORTED_TOKENS` exports). 28 failing cases. The deleted exports are recoverable from `git show 17ec3b4:server/umbra.ts`.
+- [ ] Fix `server/auth.test.ts:90` — `caller.auth.getWallets()` (plural) does not exist; current router exports `auth.getWallet`. Either rename the test call or rename the procedure to `getWallets` if multi-wallet support is the V2 direction.
+- [ ] Add `nearIntentApiUrl` to `server/_core/env.ts` — `near-intent.ts` reads `ENV.nearIntentApiUrl` but the field doesn't exist.
+- [ ] Generate and commit an initial drizzle migration (`drizzle/migrations/0000_*.sql` + `meta/_journal.json`) so the schema is reproducible.
+- [ ] Replace the mock `createWallet` in `server/routers.ts:83-101` (currently writes `"solana_${id}_${ts}"` and `"encrypted"` literals) with real `@solana/web3.js` keypair generation and AES encryption of the secret key.
+- [ ] Fix the hardcoded `"user_main_wallet_address"` sender in `server/flows.ts:51` (`handleWithdrawal`) — read from `solanaWallets`.
+- [ ] Resolve `@umbra-privacy/web-zk-prover` ↔ `@umbra-privacy/sdk` peer-dep mismatch (prover v2.0.1 wants sdk v2.0.3, lockfile has v4.0.0). Pin matching versions before wiring real Umbra.
 
-## Phase 5: Swap Engine & Transaction History
-- [x] Swap aggregator API integration (LI.FI or 0x - mock)
-- [x] Real-time exchange rates and fee calculation
-- [x] Multi-chain swap execution
-- [x] Private transaction history (user-only visibility)
-- [x] Transaction filtering and search
+## 1. Phase 1 — Foundation
 
-## Phase 6: Admin Dashboard
-- [x] User management interface
-- [x] Transaction monitoring and logs (framework)
-- [x] Risk control flags and suspicious activity alerts (framework)
-- [x] Account freeze/unfreeze functionality
-- [x] Transaction limit management
+- [x] Remove v1 (Paystack / LI.FI / multi-chain wallets / balance poller)
+- [x] V2 schema drafted (`drizzle/schema.ts`)
+- [ ] Add `umbra_encrypted_balances` and `umbra_utxos` tables required by the V2 plan
+- [ ] Verify env vars: `SOLANA_RPC_URL`, `UMBRA_INDEXER_ENDPOINT`, `UMBRA_RELAYER_ENDPOINT`, `PAJ_CASH_API_URL`, `PAJ_CASH_API_KEY`, `NEAR_INTENT_API_URL`, `APP_BASE_URL`
+- [ ] Generate + commit initial drizzle migration (see §0)
 
-## Phase 7: Real-Time Features & Security
-- [x] Real-time balance updates via WebSocket (framework)
-- [x] Transaction status notifications (framework)
-- [x] Fraud detection and risk scoring (framework)
-- [x] Transaction limits enforcement
-- [x] Security alerts and notifications (framework)
+## 2. Phase 2 — Umbra Privacy
 
-## Phase 8: UI Polish & Mobile Optimization
-- [x] Mobile-first responsive design refinement
-- [x] Cross-browser testing
-- [x] Performance optimization
-- [x] Accessibility improvements
-- [x] Final visual polish
+`server/umbra.ts` is a 67-line stub. Both methods return `Math.random()` strings. The `@umbra-privacy/sdk` and `@umbra-privacy/web-zk-prover` deps are installed but unused.
 
-## Phase 9: Delivery
-- [x] Final testing and bug fixes
-- [x] Documentation and deployment
-- [x] User acceptance testing
+- [ ] Wire `@umbra-privacy/sdk` for stealth address derivation (real Diffie-Hellman, not `Math.random()`)
+- [ ] Wire `@umbra-privacy/web-zk-prover` for claim proofs
+- [ ] Implement Umbra user registration (confidential + anonymous modes)
+- [ ] Implement encrypted-balance deposit (public → encrypted)
+- [ ] Implement encrypted-balance withdrawal (encrypted → public)
+- [ ] Implement UTXO create / scan / claim
+- [ ] Implement relayer integration
+- [ ] tRPC procedures for all of the above
+- [ ] Reinstate / rewrite Umbra test coverage
 
+## 3. Phase 3 — Paj Cash NGN Settlement
 
-## Follow-Up Features - Phase 1: Payment Provider Integration
+`server/paj-cash.ts` is a real axios client but no endpoint receives its webhooks and nothing writes back to the DB.
 
-### Paystack Integration (COMPLETED)
-- [x] Paystack API integration for NGN deposits
-- [x] Paystack API integration for NGN withdrawals
-- [x] Payment initialization and verification
-- [x] Bank account resolution and recipient creation
-- [x] Real Paystack API credentials configured
-- [x] Comprehensive test coverage (5 passing tests)
+- [ ] Add `POST /api/webhooks/paj-cash` route, verify signature with `verifyWebhookSignature`, dispatch on `event` type
+- [ ] On `deposit.confirmed`: mark `fiatRequests` row, trigger Magic Block private send of USDT to user stealth address, insert `userTransactions` row
+- [ ] On `withdrawal.confirmed`: mark `fiatRequests` row, insert `userTransactions` row, notify user
+- [ ] Persist `pajCashReference` linkage in `fiatRequests` / `userTransactions` from `flows.ts` (currently dropped)
+- [ ] Integration tests with a mocked Paj Cash server (the deleted `paj-cash-integration.test.ts` is a starting point in git history)
 
-### Remaining Payment Features
-- [ ] Webhook handlers for real-time payment confirmation
-- [ ] Payment reconciliation and settlement
-- [ ] Flutterwave API integration (optional)
+## 4. Phase 4 — NEAR Intent Routing
 
-## Follow-Up Features - Phase 2: Blockchain Wallet Generation (COMPLETED)
+`server/near-intent.ts` is a 64-line stub.
 
-### Multi-Chain Wallet Support
-- [x] Solana wallet generation using @solana/web3.js
-- [x] Ethereum-compatible wallets (Base, BSC, Avalanche) using ethers.js
-- [x] TON wallet generation using @ton/ton SDK
-- [x] Multi-chain wallet creation with 12-word mnemonic
-- [x] Address validation for all chains
-- [x] Secure private key encryption
-- [x] Comprehensive test coverage (11 passing tests)
+- [ ] Replace mock `convert()` with real NEAR Intent SDK call
+- [ ] Quote generation API for the frontend
+- [ ] Slippage / fee surfacing
+- [ ] Tests
+- [ ] Compose with Umbra: cross-chain → stealth address landing
 
-## Follow-Up Features - Phase 3: Swap Engine Integration (COMPLETED)
+## 5. Phase 5 — Flows & Backend
 
-### LI.FI Swap Aggregator Integration
-- [x] Same-chain swap quotes
-- [x] Cross-chain swap quotes
-- [x] Swap route generation for execution
-- [x] Swap execution with transaction hash
-- [x] Swap status monitoring
-- [x] Token list retrieval for all chains
-- [x] Mock fallback for API failures
-- [x] Comprehensive test coverage (13 passing tests)
+`server/flows.ts` orchestrates the three stubs. Skeleton is in place.
 
-## Follow-Up Features - Phase 4: Webhook & RPC Integration (COMPLETED)
+- [ ] Deposit flow: NGN → Paj Cash → USDT to stealth address → claim (writes `userTransactions`, `solanaStealthAddresses`)
+- [ ] Withdrawal flow: stealth USDT → Magic Block private send to Paj Cash stealth address → NGN bank transfer (currently has the hardcoded sender bug — see §0)
+- [ ] Swap flow: any token → NEAR Intent → stealth landing (currently writes nothing to DB)
+- [ ] Anonymous transfer flow (UTXO mixer): not started
+- [ ] Transaction history reads from `userTransactions` (table exists, no writes happen yet)
+- [ ] Admin procedures for transaction monitoring & compliance grants (foundation in `server/admin.ts`)
 
-### Paystack Webhook Handlers
-- [x] Webhook signature verification using HMAC-SHA512
-- [x] Charge success handler (payment received)
-- [x] Charge failed handler (payment rejected)
-- [x] Transfer success handler (withdrawal completed)
-- [x] Transfer failed handler (withdrawal rejected)
-- [x] Real-time transaction status updates
-- [x] Owner notifications for payment events
-- [x] Comprehensive webhook tests (14 passing tests)
+## 6. Phase 6 — Frontend
 
-### Real Blockchain RPC Integration
-- [x] Solana balance queries via @solana/web3.js
-- [x] Ethereum-compatible chains (Base, BSC, Avalanche) via ethers.js
-- [x] TON balance queries via RPC API
-- [x] ERC20 token balance queries
-- [x] SPL token balance queries (Solana)
-- [x] Gas price estimation for all chains
-- [x] Transaction status monitoring
-- [x] Gas estimation for transactions
-- [x] Graceful error handling with fallbacks
-- [x] Comprehensive RPC provider tests (16 passing tests)
+Present: `Dashboard`, `Deposit`, `Withdraw`, `History`, `Home`, `AdminDashboard`, `ComponentShowcase`, `NotFound`, `IntentInput`, `DashboardLayout`.
 
-Total: 81 passing tests across 10 test suites
+- [ ] `Swap.tsx` page (deleted in teardown, listed as a V2 deliverable)
+- [ ] `AnonymousTransfer.tsx` page
+- [ ] Admin sub-pages: `UserManagement`, `TransactionMonitoring`, `ComplianceLogging`, `ViewingGrants`
+- [ ] Wire frontend to `flow-procedures.ts` mutations once they hit real services
+- [ ] Loading skeletons + error boundaries beyond top-level
+- [ ] A11y + cross-browser pass
 
-## Background Balance Polling Service (COMPLETED)
+## 7. Phase 7 — Testing & Security
 
-### Core Implementation
-- [x] Balance polling engine with configurable intervals
-- [x] Batch processing for efficient RPC calls
-- [x] Multi-chain wallet balance queries (Solana, Base, BSC, TON, Avalanche)
-- [x] Graceful error handling with retry logic
-- [x] Balance change notifications (configurable threshold)
-- [x] Polling statistics and performance monitoring
+- [ ] End-to-end test for each flow against mocked external services
+- [ ] Security review (OWASP top 10) on the webhook + auth + admin surface
+- [ ] Privacy audit on the Umbra integration once real
+- [ ] Load test the webhook + flow tRPC routes
+- [ ] Runbook for mainnet deploy (Solana mainnet RPC, Umbra mainnet, Paj Cash prod, NEAR Intent mainnet)
 
-### Admin Control & Management
-- [x] tRPC procedures for starting/stopping polling
-- [x] Manual poll triggering
-- [x] Single wallet balance updates
-- [x] Balance history retrieval
-- [x] Polling status and statistics queries
-- [x] Statistics reset functionality
+---
 
-### Integration & Deployment
-- [x] Background service initialization module
-- [x] Environment variable configuration
-- [x] Server startup/shutdown hooks
-- [x] Comprehensive documentation (BALANCE_POLLING.md)
-- [x] 14 passing tests for polling service
-- [x] Error handling and edge cases
+## Known gotchas to remember
 
-Total: 95 passing tests across 11 test suites
+- **`@umbra-privacy/sdk` / `@umbra-privacy/web-zk-prover` are in `package.json` but never imported.** Don't trust dep presence as a signal that integration exists.
+- **`drizzle/migrations/` was wiped** in commit `240514f`. Running `npm run db:push` is the only path to a working DB until migrations are committed.
+- **Paj Cash webhook callback URL is set to `${ENV.appBaseUrl}/api/webhooks/paj-cash`** in both deposit and withdrawal initiation. The route doesn't exist yet; deposits initiated against a real Paj Cash sandbox will never complete.
+- **`rpc-provider.test.ts` hits live Solana / Base / BSC / TON / Avalanche RPCs** with 10s timeouts. Offline or rate-limited CI will see failures unrelated to code.
