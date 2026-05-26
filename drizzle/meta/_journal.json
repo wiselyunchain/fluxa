@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1779789515506,
+      "tag": "0000_handy_baron_strucker",
+      "breakpoints": true
+    }
+  ]
+}
