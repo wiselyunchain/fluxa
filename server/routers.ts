@@ -8,6 +8,9 @@ import { getDb, getUserByOpenId } from "./db";
 import { eq } from "drizzle-orm";
 import { flowRouter } from "./flow-procedures";
 import { adminRouter } from "./admin";
+import { Keypair } from "@solana/web3.js";
+import { randomBytes } from "crypto";
+import { encryptSecret } from "./wallet-crypto";
 
 export const appRouter = router({
   system: systemRouter,
@@ -85,19 +88,23 @@ export const appRouter = router({
         const db = await getDb();
         if (!db) throw new Error("Database unavailable");
 
-        // Generate a mock stealth address for now
-        const mockAddress = `solana_${ctx.user.id}_${Date.now()}`;
-        
+        const keypair = Keypair.generate();
+        const mainAddress = keypair.publicKey.toBase58();
+
+        const mainKeypair = encryptSecret(keypair.secretKey);
+        const stealthKey = encryptSecret(randomBytes(32));
+        const claimKey = encryptSecret(randomBytes(32));
+
         await db.insert(solanaWallets).values({
           userId: ctx.user.id,
-          mainAddress: mockAddress,
-          mainKeypair: "encrypted",
-          stealthKey: "encrypted",
-          claimKey: "encrypted",
+          mainAddress,
+          mainKeypair,
+          stealthKey,
+          claimKey,
           balance: "0",
         });
 
-        return { success: true, address: mockAddress };
+        return { success: true, address: mainAddress };
       }),
   }),
 });
