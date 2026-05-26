@@ -32,12 +32,19 @@ export const flowRouter = router({
       accountName: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+
+      const userWallet = await db.select().from(solanaWallets).where(eq(solanaWallets.userId, ctx.user.id)).limit(1);
+      if (userWallet.length === 0) throw new Error("User has no Solana wallet setup");
+
       return await FlowService.handleWithdrawal(
         ctx.user.id.toString(),
         input.usdtAmount,
         input.bankAccount,
         input.bankCode,
-        input.accountName
+        input.accountName,
+        userWallet[0].mainAddress
       );
     }),
 

@@ -87,7 +87,7 @@ describe("auth procedures", () => {
     const caller = appRouter.createCaller(ctx);
 
     try {
-      await caller.auth.getWallets();
+      await caller.auth.getWallet();
       expect.fail("Should have thrown unauthorized error");
     } catch (error: any) {
       expect(error.code).toBe("UNAUTHORIZED");

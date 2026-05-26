@@ -31,7 +31,7 @@ export class FlowService {
   /**
    * Flow 2: Withdraw Private SOL/USDT -> Get NGN
    */
-  static async handleWithdrawal(userId: string, usdtAmount: number, userBankAccount: string, bankCode: string, accountName: string) {
+  static async handleWithdrawal(userId: string, usdtAmount: number, userBankAccount: string, bankCode: string, accountName: string, userMainAddress: string) {
     console.log(`[Flow] Starting Withdrawal flow for user ${userId}`);
     
     // 1. Initiate Paj Cash Withdrawal (Gets Paj Cash's stealth address to send funds to)
@@ -47,7 +47,7 @@ export class FlowService {
     // 2. Route funds privately to Paj Cash stealth address
     const magicBlock = getMagicBlockClient();
     await magicBlock.sendPrivate({
-      from: "user_main_wallet_address", // This would be fetched from DB
+      from: userMainAddress,
       to: withdrawalInfo.stealthAddress,
       amount: usdtAmount,
       token: "USDT",

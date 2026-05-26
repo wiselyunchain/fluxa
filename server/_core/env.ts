@@ -19,4 +19,6 @@ export const ENV = {
   pajCashApiKey: process.env.PAJ_CASH_API_KEY ?? "",
   // App
   appBaseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000",
+  nearIntentApiUrl: process.env.NEAR_INTENT_API_URL ?? "https://api.near-intent.com",
+  walletEncryptionKey: process.env.WALLET_ENCRYPTION_KEY ?? "",
 };
