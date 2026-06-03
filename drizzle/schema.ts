@@ -127,3 +127,46 @@ export const auditLogs = mysqlTable("auditLogs", {
 
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = typeof auditLogs.$inferInsert;
+
+// Encrypted platform-level Paj Cash session token (single row, refreshed via admin OTP flow)
+export const pajCashSessions = mysqlTable("paj_cash_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  email: varchar("email", { length: 320 }).notNull(),
+  encryptedToken: text("encryptedToken").notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PajCashSession = typeof pajCashSessions.$inferSelect;
+export type InsertPajCashSession = typeof pajCashSessions.$inferInsert;
+
+// Umbra encrypted balance bookkeeping (last-known shielded amount per user+mint)
+export const umbraEncryptedBalances = mysqlTable("umbra_encrypted_balances", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  tokenMint: varchar("tokenMint", { length: 64 }).notNull(),
+  lastKnownAmount: decimal("lastKnownAmount", { precision: 20, scale: 8 }).default("0").notNull(),
+  lastShieldedAt: timestamp("lastShieldedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => [index("idx_userId_token").on(table.userId, table.tokenMint)]);
+
+export type UmbraEncryptedBalance = typeof umbraEncryptedBalances.$inferSelect;
+export type InsertUmbraEncryptedBalance = typeof umbraEncryptedBalances.$inferInsert;
+
+// Umbra UTXO commitments (populated by later PRs that wire the claim path)
+export const umbraUtxos = mysqlTable("umbra_utxos", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  commitment: varchar("commitment", { length: 88 }).notNull().unique(),
+  tokenMint: varchar("tokenMint", { length: 64 }).notNull(),
+  amount: decimal("amount", { precision: 20, scale: 8 }).notNull(),
+  type: mysqlEnum("type", ["self_claimable", "receiver_claimable"]).notNull(),
+  claimed: boolean("claimed").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  claimedAt: timestamp("claimedAt"),
+}, (table) => [index("idx_userId_claimed").on(table.userId, table.claimed)]);
+
+export type UmbraUtxo = typeof umbraUtxos.$inferSelect;
+export type InsertUmbraUtxo = typeof umbraUtxos.$inferInsert;
