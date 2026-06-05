@@ -1,94 +1,126 @@
-import { getPajCashClient } from "./paj-cash";
-import { getUmbraClient } from "./umbra";
-import { getMagicBlockClient } from "./magic-block";
-import { getNearIntentClient } from "./near-intent";
+import { Connection, Keypair, PublicKey, sendAndConfirmTransaction, Transaction } from "@solana/web3.js";
+import {
+  createTransferInstruction,
+  getAssociatedTokenAddressSync,
+} from "@solana/spl-token";
+import { createDepositOrder, createWithdrawalOrder } from "./paj-cash";
+import { insertFiatRequest } from "./db";
+import { decryptSecret } from "./wallet-crypto";
+import { ENV } from "./_core/env";
+import type { SolanaWallet } from "../drizzle/schema";
 
 export class FlowService {
   /**
-   * Flow 1: Deposit NGN -> Get Private SOL/USDT
+   * NGN -> Private USDC.
+   * Initiates a Paj Cash on-ramp order with the user's main Solana address as recipient,
+   * persists a fiat_requests row, and returns the bank instructions for the UI.
+   * Webhook completes the loop: Paj Cash funds the wallet → server shields into encrypted balance.
    */
-  static async handleDeposit(userId: string, nairaAmount: number, userPublicKey: string) {
-    console.log(`[Flow] Starting Deposit flow for user ${userId}`);
-    
-    // 1. Generate Stealth Address
-    const umbra = getUmbraClient();
-    const { stealthAddress } = await umbra.generateStealthAddress(userPublicKey);
-
-    // 2. Initiate Paj Cash Deposit
-    const pajCash = getPajCashClient();
-    const depositInfo = await pajCash.initiateDeposit({
-      userId,
-      nairaAmount,
-      stealthAddress
+  static async handleDeposit(input: {
+    userId: number;
+    nairaAmount: number;
+    userWallet: Pick<SolanaWallet, "mainAddress">;
+  }) {
+    const order = await createDepositOrder({
+      nairaAmount: input.nairaAmount,
+      recipientAddress: input.userWallet.mainAddress,
     });
 
-    // 3. The rest of the flow happens asynchronously via Webhooks:
-    // User pays NGN -> Paj Cash webhook confirms -> Paj Cash sends SOL/USDT to stealthAddress via Magic Block -> User claims via ZK Proof
-    
-    return depositInfo;
+    await insertFiatRequest({
+      userId: input.userId,
+      type: "deposit",
+      amount: input.nairaAmount.toString(),
+      currency: "NGN",
+      pajCashReference: order.id,
+      status: "pending",
+    });
+
+    return {
+      reference: order.id,
+      accountNumber: order.accountNumber,
+      accountName: order.accountName,
+      bank: order.bank,
+      fiatAmount: order.fiatAmount,
+      usdtAmount: order.amount,
+      rate: order.rate,
+      fee: order.fee,
+      mint: order.mint,
+    };
   }
 
   /**
-   * Flow 2: Withdraw Private SOL/USDT -> Get NGN
+   * USDC -> NGN.
+   * Initiates a Paj Cash off-ramp order, persists a fiat_requests row, and submits an SPL
+   * transfer of the requested amount from the user's main wallet to Paj Cash's address.
+   * Webhook completes the loop with the NGN settlement.
    */
-  static async handleWithdrawal(userId: string, usdtAmount: number, userBankAccount: string, bankCode: string, accountName: string, userMainAddress: string) {
-    console.log(`[Flow] Starting Withdrawal flow for user ${userId}`);
-    
-    // 1. Initiate Paj Cash Withdrawal (Gets Paj Cash's stealth address to send funds to)
-    const pajCash = getPajCashClient();
-    const withdrawalInfo = await pajCash.initiateWithdrawal({
-      userId,
-      usdtAmount,
-      userBankAccount,
-      bankCode,
-      accountName
+  static async handleWithdrawal(input: {
+    userId: number;
+    usdtAmount: number;
+    bankId: string;
+    accountNumber: string;
+    userWallet: Pick<SolanaWallet, "mainAddress" | "mainKeypair">;
+  }) {
+    const order = await createWithdrawalOrder({
+      usdtAmount: input.usdtAmount,
+      bankId: input.bankId,
+      accountNumber: input.accountNumber,
     });
 
-    // 2. Route funds privately to Paj Cash stealth address
-    const magicBlock = getMagicBlockClient();
-    await magicBlock.sendPrivate({
-      from: userMainAddress,
-      to: withdrawalInfo.stealthAddress,
-      amount: usdtAmount,
-      token: "USDT",
-      hideAmount: true,
-      hideRecipient: true,
-      hideSender: true
+    await insertFiatRequest({
+      userId: input.userId,
+      type: "withdrawal",
+      amount: order.fiatAmount.toString(),
+      currency: "NGN",
+      pajCashReference: order.id,
+      status: "pending",
+      bankAccount: `${input.bankId}:${input.accountNumber}`,
     });
 
-    // 3. The rest of the flow happens asynchronously via Webhooks:
-    // Paj Cash receives USDT -> Converts to NGN -> Transfers to user's bank account -> Webhook confirms
+    const transferSignature = await sendSplToken({
+      fromWallet: input.userWallet,
+      toAddress: order.address,
+      mint: order.mint,
+      amount: BigInt(Math.floor(input.usdtAmount)),
+    });
 
-    return withdrawalInfo;
+    return {
+      reference: order.id,
+      transferSignature,
+      pajCashAddress: order.address,
+      fiatAmount: order.fiatAmount,
+      rate: order.rate,
+      fee: order.fee,
+    };
   }
 
   /**
-   * Flow 3: Swap Any Token -> Get Private Token
+   * NEAR Intent path stubbed until Phase 4 lands real wiring.
    */
-  static async handleSwap(userId: string, fromToken: string, fromChain: string, fromAmount: number, toToken: string, toChain: string, userPublicKey: string) {
-    console.log(`[Flow] Starting Swap flow for user ${userId}`);
-    
-    // 1. Generate Stealth Address for the destination
-    const umbra = getUmbraClient();
-    const { stealthAddress } = await umbra.generateStealthAddress(userPublicKey);
-
-    // 2. Call NEAR Intent to route and convert
-    const nearIntent = getNearIntentClient();
-    const result = await nearIntent.convert({
-      from: {
-        token: fromToken,
-        chain: fromChain,
-        amount: fromAmount
-      },
-      to: {
-        token: toToken,
-        chain: toChain,
-        address: stealthAddress
-      }
-    });
-
-    // 3. User now has funds at the stealth address and can claim them via ZK Proof
-    
-    return result;
+  static async handleSwap(): Promise<never> {
+    throw new Error("Swap flow not implemented yet (Phase 4)");
   }
+}
+
+async function sendSplToken(args: {
+  fromWallet: Pick<SolanaWallet, "mainAddress" | "mainKeypair">;
+  toAddress: string;
+  mint: string;
+  amount: bigint;
+}): Promise<string> {
+  const secretKey = new Uint8Array(decryptSecret(args.fromWallet.mainKeypair));
+  const keypair = Keypair.fromSecretKey(secretKey);
+  const connection = new Connection(ENV.solanaRpcUrl, "confirmed");
+  const mint = new PublicKey(args.mint);
+  const sender = new PublicKey(args.fromWallet.mainAddress);
+  const recipient = new PublicKey(args.toAddress);
+
+  const sourceAta = getAssociatedTokenAddressSync(mint, sender);
+  const destAta = getAssociatedTokenAddressSync(mint, recipient);
+
+  const tx = new Transaction().add(
+    createTransferInstruction(sourceAta, destAta, sender, args.amount),
+  );
+
+  return sendAndConfirmTransaction(connection, tx, [keypair]);
 }

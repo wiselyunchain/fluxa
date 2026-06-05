@@ -1,56 +1,58 @@
 # FluxaX V2: Implementation Tracking
 
-> Last reconciled against code at commit `240514f` ("implemtnation").
-> Prior commits' completion claims were inflated — see "Notes on history" at the bottom.
+> Last reconciled against working tree on 2026-06-05 (post `6a98646`). Tests: **62 / 62 passing** across 7 files (~18s wall).
+> Companion doc: `PROJECT_STATUS.md` (executive snapshot) — this file is the longer per-module breakdown.
 
 ---
 
 ## Snapshot of where the code actually is
 
-The V1 MVP (Paystack / multi-chain wallets / LI.FI swap aggregator / balance poller) was torn down in commit `240514f`. What remains is a **V2 scaffold**: interfaces and tRPC procedures that match the planned privacy-first architecture, but with the privacy/routing modules implemented as mocks.
+Phase 3 (Paj Cash) is **done** and Phase 2 (Umbra shielding) has its **deposit-side slice** done. The V2 scaffold from `240514f` has been filled in for the on-ramp / off-ramp loop: `paj_ramp` SDK is wired, the webhook receiver persists fiat requests and user transactions, and on-ramp completion triggers a real Umbra `shieldPublicBalance` call against the user's main wallet.
+
+What remains for an end-to-end MVP: NEAR Intent (Phase 4) is still a stub, the swap flow throws `not implemented`, several admin endpoints are unfinished (search filters, dashboard stats, flag persistence, audit logs, risk alerts), and the frontend is missing `Swap.tsx`, `AnonymousTransfer.tsx`, plus admin sub-pages.
 
 ### Modules — real vs stub
 
-| Module | File | Lines | State |
-|---|---|---|---|
-| Umbra client | `server/umbra.ts` | 67 | **Stub.** `generateStealthAddress` / `generateClaimProof` return `Math.random()` strings. No `@umbra-privacy/sdk` usage despite the dep being in `package.json`. |
-| Umbra tests | `server/umbra.test.ts` | 369 | **Broken.** Imports `initializeUmbraClient`, `registerUmbraUser`, `depositToEncryptedBalance`, etc. — none exist in current `umbra.ts`. Must be rewritten or the surface restored. |
-| Paj Cash client | `server/paj-cash.ts` | 281 | **Real HTTP client** (axios). Endpoints: `/deposits/initiate`, `/withdrawals/initiate`, `/rates`, `/bank/validate`, `/bank/list`, `/stealth-address`. Webhook signature verify present (HMAC-SHA256). Not exercised against a live or mocked Paj Cash API yet. |
-| Paj Cash webhook route | _missing_ | — | **Not built.** Flows depend on Paj Cash callbacks but there is no Express/tRPC route receiving `POST /api/webhooks/paj-cash`. |
-| NEAR Intent | `server/near-intent.ts` | 64 | **Stub.** `convert()` calls `setTimeout(1500)` and returns `outputAmount = from.amount * 0.98`. No SDK. |
-| Magic Block | `server/magic-block.ts` | 51 | **Stub.** `sendPrivate()` returns a fake tx hash. No SDK. |
-| Flow service | `server/flows.ts` | 94 | Orchestration over the stubs. Withdrawal flow contains a literal `"user_main_wallet_address"` placeholder. |
-| Flow procedures | `server/flow-procedures.ts` | 69 | tRPC `deposit` / `withdraw` / `swap` mutations. Functional skeleton. |
-| Wallet creation | `server/routers.ts:83-101` | — | **Mock.** `createWallet` writes `mockAddress = "solana_${id}_${date}"` and `"encrypted"` literals for `mainKeypair` / `stealthKey` / `claimKey`. No real Solana keypair generation. |
-| RPC provider | `server/rpc-provider.ts` | 317 | Real, retained from v1. Hits live RPC endpoints in tests. |
-| Admin | `server/admin.ts` | 213 | Retained. |
-| Auth | `server/_core/oauth.ts`, `server/routers.ts` | — | Manus OAuth retained. |
-| DB schema | `drizzle/schema.ts` | 156 | Tables: `users`, `solanaWallets`, `userTransactions`, `solanaStealthAddresses`, `fiatRequests`, `riskFlags`, `auditLogs`. **Missing** the `umbra_encrypted_balances` / `umbra_utxos` tables the V2 plan calls for. |
-| DB migrations | `drizzle/migrations/`, `drizzle/meta/` | — | **Wiped in the teardown.** Only `drizzle/schema.ts` and an empty `drizzle/relations.ts` remain. `npm run db:push` would generate a fresh `0000_*.sql`. |
-| Frontend pages | `client/src/pages/` | — | `Dashboard`, `Deposit`, `Withdraw`, `History`, `Home`, `AdminDashboard`, `ComponentShowcase`, `NotFound`. **No** `Swap.tsx` or `AnonymousTransfer.tsx`. |
-| Frontend components | `client/src/components/IntentInput.tsx` | 128 | New intent-input component. |
+| Module | File | State |
+|---|---|---|
+| Umbra shield (deposit-side) | `server/umbra.ts` | ✅ **Real.** `shieldPublicBalance` calls `getPublicBalanceToEncryptedBalanceDirectDepositorFunction` from `@umbra-privacy/sdk`; updates `umbra_encrypted_balances`. Client cache by keypair. |
+| Umbra UTXO claim path | _missing_ | ⬜ Not started. `umbra_utxos` table exists; claim/transfer flows deferred. |
+| Paj Cash client | `server/paj-cash.ts` | ✅ **Real.** Wraps `paj_ramp`: `initiate` / `verify` (OTP), `createOnrampOrder`, `createOfframpOrder`, `getBanks`, `resolveBankAccount`, `getAllRate`. Encrypted session token via AES-256-GCM. |
+| Paj Cash webhook | `server/paj-cash-webhook.ts` | ✅ **Real.** `POST /api/webhooks/paj-cash`. Status mapping, on-ramp triggers shielding, off-ramp records confirmed withdrawal, persists to `fiat_requests` + `user_transactions`. Idempotent (always 200). |
+| NEAR Intent | `server/near-intent.ts` | 🔴 Stub. `setTimeout(1500)` + `amount * 0.98`. Phase 4. |
+| Magic Block | `server/magic-block.ts` | 🔴 Stub. Returns fake tx hash. Out of scope. |
+| Flow service | `server/flows.ts` | 🟡 Deposit + withdraw implemented (Paj Cash orders + SPL transfer for off-ramp). `handleSwap` throws `not implemented`. |
+| Flow procedures | `server/flow-procedures.ts` | 🟡 `deposit` / `withdraw` work; `swap` throws. |
+| Wallet creation | `server/routers.ts:83-110` | ✅ Real. `Keypair.generate()` + AES-256-GCM (`server/wallet-crypto.ts`). |
+| RPC provider | `server/rpc-provider.ts` | ✅ Real. Live RPC endpoints. |
+| Admin | `server/admin.ts` | ✅ OTP procedures + filters + dashboard stats + flag persistence + audit-log writes + risk alerts. |
+| Auth | `server/_core/oauth.ts`, `server/routers.ts` | ✅ Manus OAuth retained. |
+| DB schema | `drizzle/schema.ts` | ✅ Postgres. 11 tables. |
+| DB migrations | `drizzle/0000_funny_sister_grimm.sql` + `drizzle/meta/` | 🟡 **On disk, not committed.** Matches schema 1:1 (11 tables, 9 enums, 11 indexes). Stage and commit. |
+| DB driver | `server/db.ts` | ✅ Postgres via `pg` + `drizzle-orm/node-postgres`. Helpers for users, wallets, transactions, fiat requests, Paj Cash sessions, Umbra balances. |
+| Frontend pages | `client/src/pages/` | 🟡 `Dashboard`, `Deposit`, `Withdraw`, `History`, `Home`, `AdminDashboard`, `ComponentShowcase`, `NotFound`. **Missing:** `Swap.tsx`, `AnonymousTransfer.tsx`, admin sub-pages (`UserManagement`, `TransactionMonitoring`, `ComplianceLogging`, `ViewingGrants`). |
 
-### Test surface (after teardown)
+### Test surface
 
-Measured: `pnpm install && npx vitest run` → **30 pass / 29 fail (59 total)** across 5 files in ~10s.
+`npx vitest run` → **62 pass / 0 fail** across 7 files in ~18s.
 
-| File | Pass | Fail | Notes |
-|---|---|---|---|
-| `server/rpc-provider.test.ts` | 17 | 0 | All green. Hits live Solana / Base / BSC / Avalanche / TON RPCs — slowest file (~1s/test, occasionally 2.3s). Will break offline. |
-| `server/admin.test.ts` | 7 | 0 | All green. |
-| `server/auth.logout.test.ts` | 1 | 0 | Green. |
-| `server/auth.test.ts` | 4 | 1 | One test calls `caller.auth.getWallets()` (v1 plural) but the current router has `auth.getWallet` (singular) → returns `NOT_FOUND`, test expects `UNAUTHORIZED`. Rename leftover. |
-| `server/umbra.test.ts` | 0 | 28 | All 28 cases fail — every import (`initializeUmbraClient`, `createTestSigner`, `registerUmbraUser`, `depositToEncryptedBalance`, `withdrawFromEncryptedBalance`, `createReceiverClaimableUtxo`, `fetchClaimableUtxos`, `claimUtxoToEncryptedBalance`, `calculateUmbraFee`, `UMBRA_SUPPORTED_TOKENS`) resolves to `undefined`. |
+| File | Tests | Notes |
+|---|---|---|
+| `server/rpc-provider.test.ts` | 18 | Hits live Solana / Base / BSC / Avalanche / TON RPCs (~13s — slowest). Breaks offline. |
+| `server/admin.test.ts` | 15 | Authorization, no-DB defaults, input validation, persistence (audit logs, risk flags, dashboard counts) via mocked drizzle. |
+| `server/paj-cash.test.ts` | 9 | SDK calls mocked via `vi.mock("paj_ramp", ...)`. Covers initiate / verify / order creation. |
+| `server/paj-cash-webhook.test.ts` | 8 | Integration-style with mocked DB + Umbra. Covers INIT/PAID/COMPLETED/FAILED status transitions, on-ramp shielding side-effect, off-ramp recording, idempotency. |
+| `server/umbra.test.ts` | 6 | `vi.mock("@umbra-privacy/sdk", ...)` — exercises real `shieldPublicBalance` codepath with mocked SDK. |
+| `server/auth.test.ts` | 5 | OAuth flow. |
+| `server/auth.logout.test.ts` | 1 | Logout. |
 
-Tests **deleted** in `240514f` and not yet replaced: `paystack.test.ts`, `paystack-webhook.test.ts`, `swap.test.ts`, `swap-aggregator.test.ts`, `wallets.test.ts`, `fiat.test.ts`, `balance-poller.test.ts`, `paj-cash-integration.test.ts`.
+### Dependency notes
 
-### Dependency-resolution warnings worth noting
+`pnpm install` succeeds. Open peer warnings (non-blocking):
 
-`pnpm install` succeeds but flags peer-dep mismatches that will bite the moment Umbra is real:
-
-- `@umbra-privacy/web-zk-prover@2.0.1` expects `@umbra-privacy/sdk@2.0.3`, lockfile has `4.0.0` — the ZK prover may not work with the v4 SDK.
-- `@umbra-privacy/sdk → @umbra-privacy/umbra-codama → @solana-program/token-2022` expects `@solana/sysvars@^5.0`, lockfile has `6.8.0`.
-- `@builder.io/vite-plugin-jsx-loc@0.1.1` expects `vite@^4 || ^5`, lockfile has `vite@7.1.9`.
+- `@umbra-privacy/sdk → @umbra-privacy/umbra-codama → @solana-program/token-2022` expects `@solana/sysvars@^5.0`; lockfile has `6.8.0`.
+- `@builder.io/vite-plugin-jsx-loc@0.1.1` expects `vite@^4 || ^5`; lockfile has `vite@7.1.9`.
+- `@umbra-privacy/web-zk-prover` is no longer needed for the deposit-side slice; can be removed when the claim path is built (or sooner).
 
 ---
 
@@ -59,82 +61,82 @@ Tests **deleted** in `240514f` and not yet replaced: `paystack.test.ts`, `paysta
 Legend: ✅ done · 🟡 partial · 🔴 stub-only · ⬜ not started
 
 ### Phase 1: Foundation & Infrastructure
-- 🟡 Schema with Umbra tables — `solanaStealthAddresses` exists, but the encrypted-balance and UTXO tables from the V2 plan do not
-- ✅ Paystack/v1 code removed
-- 🔴 Solana wallet generation — mock string in `routers.ts`
-- 🟡 Env configuration — `_core/env.ts` covers Solana / Umbra / Paj Cash, but no `NEAR_INTENT_API_URL` (used in `near-intent.ts` via `ENV.nearIntentApiUrl` which doesn't exist on the ENV object)
-- 🔴 DB migrations — directory wiped, never regenerated
+- ✅ V2 schema (11 tables incl. `umbra_encrypted_balances`, `umbra_utxos`, `paj_cash_sessions`)
+- ✅ Paystack / v1 code removed
+- ✅ Real Solana wallet generation (`Keypair.generate` + AES-256-GCM)
+- ✅ Env configuration (`pajCashApiKey`, `pajCashEnvironment`, `pajCashWebhookUrl`, `pajCashUsdcMint`, `nearIntentApiUrl`, `walletEncryptionKey`, Umbra/Solana vars)
+- ✅ Dialect switch MySQL → Postgres
+- 🟡 **DB migrations** — generated and matching schema, but `drizzle/0000_funny_sister_grimm.sql` and `drizzle/meta/` are still untracked. Stage and commit.
 
 ### Phase 2: Umbra Integration
-- 🔴 Umbra client init — stub
-- 🔴 User registration (confidential / anonymous)
-- 🔴 Encrypted-balance deposit / withdraw
-- 🔴 UTXO create / scan / claim
-- 🔴 Relayer integration
-- 🔴 Tests broken (imports don't resolve)
+- ✅ Client init via `getUmbraClient` (cached by keypair)
+- ✅ Deposit shielding (`shieldPublicBalance`) — real SDK
+- ✅ `umbra_encrypted_balances` bookkeeping
+- ✅ Tests cover real codepath (SDK mocked at module boundary)
+- ⬜ Withdrawal from encrypted balance
+- ⬜ UTXO create / scan / claim
+- ⬜ Receiver-claimable UTXOs (anonymous transfer)
+- ⬜ Relayer integration
 
 ### Phase 3: Paj Cash Integration
-- 🟡 API client — present, untested against a live or mock server
-- 🟡 Deposit / withdrawal initiation — methods exist
-- 🔴 Webhook route — **no endpoint** to receive callbacks
-- 🔴 Transaction status tracking against `userTransactions` / `fiatRequests` — not wired
-- 🔴 Tests — `paj-cash-integration.test.ts` was deleted
+- ✅ SDK client (`paj_ramp`)
+- ✅ Admin OTP capture (`admin.pajCashInitiate` / `admin.pajCashVerify`) with encrypted token persistence
+- ✅ Deposit / withdrawal initiation (`createOnrampOrder` / `createOfframpOrder`)
+- ✅ Webhook receiver at `POST /api/webhooks/paj-cash`
+- ✅ Status tracking against `fiat_requests` + `user_transactions`
+- ✅ Tests — 9 SDK-wrapper + 8 webhook = 17 total
 
 ### Phase 4: NEAR Intent Integration
 - 🔴 Client — stub returning `amount * 0.98`
-- 🔴 Quote / swap execution
-- 🔴 Umbra integration
-- 🔴 Tests — none
+- ⬜ Quote / swap execution
+- ⬜ Umbra integration (shielded-in → swap → shielded-out)
+- ⬜ Tests
 
 ### Phase 5: User Flows & Backend
-- 🟡 Deposit / withdrawal / swap flows — orchestration skeleton exists, depends on stubbed clients
-- 🔴 Anonymous transfer flow
-- 🔴 Transaction recording — `userTransactions` table exists but flows don't write to it
-- 🔴 Balance polling — removed in teardown
+- ✅ Deposit flow — Paj Cash on-ramp → webhook → shield → `user_transactions`
+- ✅ Withdrawal flow — Paj Cash off-ramp + SPL transfer
+- 🔴 Swap flow — `handleSwap` throws `not implemented`
+- ⬜ Anonymous transfer flow
+- ⬜ Balance polling (removed in teardown; no replacement)
 
 ### Phase 6: Frontend & UI
-- 🟡 Core components — `IntentInput`, `DashboardLayout`, etc. present
-- 🟡 User pages — `Dashboard`, `Deposit`, `Withdraw`, `History` present; `Swap` and `AnonymousTransfer` missing
-- 🟡 Admin dashboard — `AdminDashboard.tsx` exists; sub-pages (`UserManagement`, `TransactionMonitoring`) not present
-- 🔴 Polish (error boundaries beyond top-level, loading skeletons beyond layout, a11y, cross-browser)
+- 🟡 Core components — `IntentInput`, `DashboardLayout`, error boundary, skeleton present
+- 🟡 User pages — `Dashboard`, `Deposit`, `Withdraw`, `History` present; **`Swap.tsx`, `AnonymousTransfer.tsx` missing**
+- 🟡 Admin dashboard — top-level present; sub-pages (`UserManagement`, `TransactionMonitoring`, `ComplianceLogging`, `ViewingGrants`) **missing**
+- 🔴 Polish (page-level error boundaries, loading states, a11y, cross-browser)
 
 ### Phase 7: Testing & Security
-- 🔴 E2E suite
-- 🔴 Security audit
-- 🔴 Privacy audit
+- 🔴 E2E suite — not built (devnet + Paj Cash sandbox loop)
+- 🔴 Security audit — webhook signature verification, AES key handling, OTP replay
+- 🔴 Privacy audit — confirm no PII leaks across the shield boundary
 - 🔴 Load / vulnerability scans
 - 🔴 Mainnet deployment plan
 
 ---
 
-## Critical issues blocking progress
+## Active blockers and immediate gaps
 
-1. **`umbra.test.ts` references a deleted API.** Either restore the previous Umbra surface (`initializeUmbraClient`, `registerUmbraUser`, etc.) or rewrite the tests against `UmbraClient` / `getUmbraClient`. Currently produces **28 failures** out of 28 cases.
-2. **`auth.test.ts` calls `auth.getWallets()` (v1)** — current router has `auth.getWallet` singular. One test asserts `UNAUTHORIZED` but receives `NOT_FOUND`. Rename the call (and decide whether the procedure name itself should be plural for the multi-wallet future).
-3. **No Paj Cash webhook endpoint.** Flows initiate deposits with `callbackUrl: ${ENV.appBaseUrl}/api/webhooks/paj-cash`, but nothing is registered at that path. The deposit flow has no completion path.
-4. **`ENV.nearIntentApiUrl` is read but never declared** in `_core/env.ts`. Currently `undefined`, harmless because `near-intent.ts` is a mock, but it will silently break the real integration.
-5. **`createWallet` produces unusable mock data.** A user signing up gets `mainAddress = "solana_${id}_${ts}"` and `"encrypted"` literals — deposit/withdraw/swap flows that read `userWallet.mainAddress` will pass nonsense downstream.
-6. **No drizzle migrations checked in.** `npm run db:push` is the only path to a working DB; teammates / CI can't recreate the schema deterministically yet.
-7. **Withdrawal flow has a hardcoded sender** (`"user_main_wallet_address"`) — it must read from `solanaWallets`.
-8. **Umbra dependency-version mismatch.** `@umbra-privacy/web-zk-prover@2.0.1` declares a peer of `@umbra-privacy/sdk@2.0.3`, lockfile has `4.0.0` — the prover may not work against the v4 SDK when Umbra is wired for real.
+1. **Migrations untracked.** `drizzle/0000_funny_sister_grimm.sql` and `drizzle/meta/` are on disk but not in git. Stage and commit so CI / teammates can recreate the schema.
+2. **Swap flow stub.** `flows.ts:101` and `flow-procedures.ts:49` throw `not implemented`. Blocks Phase 4 + the `Swap.tsx` page.
+3. **NEAR Intent stub.** `setTimeout + 0.98x`. Phase 4 entry.
+4. **Frontend gaps.** `Swap.tsx`, `AnonymousTransfer.tsx`, and the four admin sub-pages.
+5. **No E2E / security / privacy review.** Phase 7.
 
 ---
 
 ## Suggested next-up ordering
 
-Before continuing the timeline, close the gaps the teardown opened:
-
-1. Decide whether to keep the existing tracking files in lockstep with reality or scrap them and re-plan. I'd recommend the former — fix the discrepancies and only commit phase completion when tests prove it.
-2. Fix `umbra.test.ts` (or restore the deleted Umbra functions) so `npm test` runs end-to-end again.
-3. Add the Paj Cash webhook route + `ENV.nearIntentApiUrl` + write `userTransactions` rows in flows.
-4. Replace the mock `createWallet` with real `@solana/web3.js` keypair generation + AES encryption of the secret (env-keyed).
-5. Generate and commit an initial drizzle migration so the schema is reproducible.
-6. Only then resume Phase 2 (real Umbra SDK wiring).
+1. **Commit the drizzle migration** (Phase 1 close-out).
+2. **Phase 4 — real NEAR Intent client** + implement `handleSwap` (shielded-in → Intent → shielded-out) + `Swap.tsx`.
+3. **Anonymous transfer + Umbra claim path** — populate `umbra_utxos` on shield, expose claim, build `AnonymousTransfer.tsx`.
+4. **Admin sub-pages** in the frontend (`UserManagement`, `TransactionMonitoring`, `ComplianceLogging`, `ViewingGrants`) — backend endpoints now ready.
+5. **Phase 7** — E2E loop on devnet + Paj Cash sandbox, security/privacy review.
 
 ---
 
 ## Notes on history
 
-- Commit `17ec3b4` claimed "Phase 1-2 Complete: 64 tests passing." That was true *at that point* — `umbra.test.ts` and `paj-cash-integration.test.ts` had matching implementations.
-- Commit `240514f` ("implemtnation") was a refactor that deleted most v1 code and shrunk Umbra/Paj Cash to skeletons, but **did not update `umbra.test.ts` to match**. The 64-passing claim is no longer accurate for HEAD.
-- The frontend half of `240514f` (deleting `Swap.tsx` / `Fiat.tsx`, adding `IntentInput.tsx`, `Deposit.tsx`, `Withdraw.tsx`) is a sensible V2 reshape but leaves Phase 6 pages incomplete relative to the timeline (`Swap`, `AnonymousTransfer` are still listed as deliverables).
+- Commit `240514f` ("implemtnation") reshaped to the V2 scaffold but broke `umbra.test.ts` and left mocks in `createWallet`, `flows.ts`, and the env.
+- Commits `4156d6e` → `2ee7041` → `708b0b3` → `4b214e4` → `787f2c5` are the §0 cleanup: restored umbra surface, fixed env + withdrawal wallet, added real Solana keypairs + AES, generated initial migration, added Phase-3 schema tables.
+- Commit `6a98646` ("feat: project status") switched dialect to Postgres and deleted the MySQL migrations.
+- Post-`6a98646` working-tree work (not yet committed): `paj_ramp` integration, real `shieldPublicBalance`, webhook receiver, admin OTP procedures, Postgres migration regenerated.

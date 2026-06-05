@@ -1,7 +1,25 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc, gt } from "drizzle-orm";
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { InsertUser, users, solanaWallets, userTransactions, fiatRequests, riskFlags, SolanaWallet, UserTransaction, FiatRequest, RiskFlag } from "../drizzle/schema";
+import {
+  InsertUser,
+  users,
+  solanaWallets,
+  userTransactions,
+  fiatRequests,
+  riskFlags,
+  pajCashSessions,
+  umbraEncryptedBalances,
+  SolanaWallet,
+  UserTransaction,
+  FiatRequest,
+  RiskFlag,
+  PajCashSession,
+  UmbraEncryptedBalance,
+  InsertFiatRequest,
+  InsertUserTransaction,
+  InsertPajCashSession,
+} from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _pool: Pool | null = null;
@@ -133,4 +151,163 @@ export async function getUserRiskFlags(userId: number): Promise<RiskFlag[]> {
   if (!db) return [];
 
   return db.select().from(riskFlags).where(and(eq(riskFlags.userId, userId), eq(riskFlags.resolved, false)));
+}
+
+// ---------- Paj Cash session (single platform-level row, latest non-expired) ----------
+
+export async function getActivePajCashSession(): Promise<PajCashSession | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(pajCashSessions)
+    .where(gt(pajCashSessions.expiresAt, new Date()))
+    .orderBy(desc(pajCashSessions.expiresAt))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function upsertPajCashSession(input: {
+  email: string;
+  encryptedToken: string;
+  expiresAt: Date;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot upsert paj-cash session: database not available");
+    return;
+  }
+
+  const existing = await db.select().from(pajCashSessions).limit(1);
+  const values: InsertPajCashSession = {
+    email: input.email,
+    encryptedToken: input.encryptedToken,
+    expiresAt: input.expiresAt,
+  };
+
+  if (existing.length === 0) {
+    await db.insert(pajCashSessions).values(values);
+    return;
+  }
+
+  await db
+    .update(pajCashSessions)
+    .set({ ...values, updatedAt: new Date() })
+    .where(eq(pajCashSessions.id, existing[0].id));
+}
+
+// ---------- Umbra encrypted balance bookkeeping ----------
+
+export async function upsertUmbraEncryptedBalance(input: {
+  userId: number;
+  tokenMint: string;
+  amountDelta: string;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot upsert umbra balance: database not available");
+    return;
+  }
+
+  const existing = await db
+    .select()
+    .from(umbraEncryptedBalances)
+    .where(
+      and(
+        eq(umbraEncryptedBalances.userId, input.userId),
+        eq(umbraEncryptedBalances.tokenMint, input.tokenMint),
+      ),
+    )
+    .limit(1);
+
+  const now = new Date();
+  if (existing.length === 0) {
+    await db.insert(umbraEncryptedBalances).values({
+      userId: input.userId,
+      tokenMint: input.tokenMint,
+      lastKnownAmount: input.amountDelta,
+      lastShieldedAt: now,
+    });
+    return;
+  }
+
+  const prev = Number(existing[0].lastKnownAmount ?? "0");
+  const next = (prev + Number(input.amountDelta)).toString();
+  await db
+    .update(umbraEncryptedBalances)
+    .set({ lastKnownAmount: next, lastShieldedAt: now, updatedAt: now })
+    .where(eq(umbraEncryptedBalances.id, existing[0].id));
+}
+
+export async function getUmbraEncryptedBalance(
+  userId: number,
+  tokenMint: string,
+): Promise<UmbraEncryptedBalance | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(umbraEncryptedBalances)
+    .where(
+      and(
+        eq(umbraEncryptedBalances.userId, userId),
+        eq(umbraEncryptedBalances.tokenMint, tokenMint),
+      ),
+    )
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+// ---------- Fiat requests (deposits/withdrawals via Paj Cash) ----------
+
+export async function insertFiatRequest(input: InsertFiatRequest): Promise<FiatRequest> {
+  const db = await getDb();
+  if (!db) {
+    throw new Error("Database not available");
+  }
+  const inserted = await db.insert(fiatRequests).values(input).returning();
+  return inserted[0];
+}
+
+export async function getFiatRequestByReference(
+  pajCashReference: string,
+): Promise<FiatRequest | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(fiatRequests)
+    .where(eq(fiatRequests.pajCashReference, pajCashReference))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function updateFiatRequestStatus(
+  pajCashReference: string,
+  status: FiatRequest["status"],
+  confirmedAt?: Date,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  await db
+    .update(fiatRequests)
+    .set({ status, ...(confirmedAt ? { confirmedAt } : {}) })
+    .where(eq(fiatRequests.pajCashReference, pajCashReference));
+}
+
+// ---------- User transactions (private ledger) ----------
+
+export async function insertUserTransaction(
+  input: InsertUserTransaction,
+): Promise<UserTransaction> {
+  const db = await getDb();
+  if (!db) {
+    throw new Error("Database not available");
+  }
+  const inserted = await db.insert(userTransactions).values(input).returning();
+  return inserted[0];
 }
