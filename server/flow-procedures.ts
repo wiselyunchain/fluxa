@@ -45,7 +45,32 @@ export const flowRouter = router({
     }),
 
   swap: protectedProcedure
-    .mutation(async () => {
-      throw new Error("Swap flow not implemented yet (Phase 4)");
+    .input(
+      z.object({
+        fromMintAddress: z.string().min(32),
+        originAsset: z.string().min(1),
+        destinationAsset: z.string().min(1),
+        amountBaseUnits: z.string().regex(/^\d+$/, "amount must be an integer string in base units"),
+        recipient: z.string().optional(),
+        slippageBps: z.number().int().min(0).max(10_000).optional(),
+        deadlineSeconds: z.number().int().min(60).max(86_400).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const wallets = await getUserWallets(ctx.user.id);
+      const wallet = wallets[0];
+      if (!wallet) throw new Error("User has no Solana wallet setup");
+
+      return FlowService.handleSwap({
+        userId: ctx.user.id,
+        userWallet: wallet,
+        fromMintAddress: input.fromMintAddress,
+        originAsset: input.originAsset,
+        destinationAsset: input.destinationAsset,
+        amountBaseUnits: input.amountBaseUnits,
+        recipient: input.recipient,
+        slippageBps: input.slippageBps,
+        deadlineSeconds: input.deadlineSeconds,
+      });
     }),
 });

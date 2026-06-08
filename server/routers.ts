@@ -8,6 +8,7 @@ import { getDb, getUserByOpenId } from "./db";
 import { eq } from "drizzle-orm";
 import { flowRouter } from "./flow-procedures";
 import { adminRouter } from "./admin";
+import { umbraRouter } from "./umbra-procedures";
 import { Keypair } from "@solana/web3.js";
 import { randomBytes } from "crypto";
 import { encryptSecret } from "./wallet-crypto";
@@ -16,7 +17,8 @@ export const appRouter = router({
   system: systemRouter,
   flow: flowRouter,
   admin: adminRouter,
-  
+  umbra: umbraRouter,
+
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     

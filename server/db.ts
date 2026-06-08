@@ -1,4 +1,4 @@
-import { eq, and, desc, gt } from "drizzle-orm";
+import { eq, and, desc, gt, isNotNull } from "drizzle-orm";
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import {
@@ -10,15 +10,18 @@ import {
   riskFlags,
   pajCashSessions,
   umbraEncryptedBalances,
+  umbraUtxos,
   SolanaWallet,
   UserTransaction,
   FiatRequest,
   RiskFlag,
   PajCashSession,
   UmbraEncryptedBalance,
+  UmbraUtxo,
   InsertFiatRequest,
   InsertUserTransaction,
   InsertPajCashSession,
+  InsertUmbraUtxo,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -310,4 +313,68 @@ export async function insertUserTransaction(
   }
   const inserted = await db.insert(userTransactions).values(input).returning();
   return inserted[0];
+}
+
+export async function getPendingSwapTransactions(limit: number = 100): Promise<UserTransaction[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(userTransactions)
+    .where(
+      and(
+        eq(userTransactions.type, "swap"),
+        eq(userTransactions.status, "pending"),
+        isNotNull(userTransactions.nearIntentDepositAddress),
+      ),
+    )
+    .orderBy(userTransactions.createdAt)
+    .limit(limit);
+}
+
+// ---------- Umbra UTXOs (discovered by scanner, claimed by user later) ----------
+
+export async function insertUmbraUtxoIfNew(input: InsertUmbraUtxo): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  await db.insert(umbraUtxos).values(input).onConflictDoNothing({ target: umbraUtxos.commitment });
+}
+
+export async function getClaimableUmbraUtxos(userId: number): Promise<UmbraUtxo[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(umbraUtxos)
+    .where(and(eq(umbraUtxos.userId, userId), eq(umbraUtxos.claimed, false)))
+    .orderBy(desc(umbraUtxos.createdAt));
+}
+
+export async function markUmbraUtxoClaimed(commitment: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  await db
+    .update(umbraUtxos)
+    .set({ claimed: true, claimedAt: new Date() })
+    .where(eq(umbraUtxos.commitment, commitment));
+}
+
+export async function updateUserTransactionStatus(input: {
+  id: number;
+  status: UserTransaction["status"];
+  confirmedAt?: Date;
+  toAmount?: string;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  const patch: Partial<UserTransaction> = { status: input.status };
+  if (input.confirmedAt !== undefined) patch.confirmedAt = input.confirmedAt;
+  if (input.toAmount !== undefined) patch.toAmount = input.toAmount;
+
+  await db.update(userTransactions).set(patch).where(eq(userTransactions.id, input.id));
 }

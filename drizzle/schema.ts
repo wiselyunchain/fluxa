@@ -64,10 +64,16 @@ export const userTransactions = pgTable("user_transactions", {
   fromAmount: numeric("fromAmount", { precision: 20, scale: 8 }).notNull(),
   toAmount: numeric("toAmount", { precision: 20, scale: 8 }),
   nearIntentId: varchar("nearIntentId", { length: 255 }),
+  nearIntentDepositAddress: varchar("nearIntentDepositAddress", { length: 88 }),
+  nearIntentDepositMemo: varchar("nearIntentDepositMemo", { length: 255 }),
   pajCashReference: varchar("pajCashReference", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   confirmedAt: timestamp("confirmedAt"),
-}, (table) => [index("idx_userId").on(table.userId), index("idx_status").on(table.status)]);
+}, (table) => [
+  index("idx_userId").on(table.userId),
+  index("idx_status").on(table.status),
+  index("idx_pending_swaps").on(table.type, table.status, table.nearIntentDepositAddress),
+]);
 
 export type UserTransaction = typeof userTransactions.$inferSelect;
 export type InsertUserTransaction = typeof userTransactions.$inferInsert;

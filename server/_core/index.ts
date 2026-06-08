@@ -8,6 +8,7 @@ import { registerPajCashWebhook } from "../paj-cash-webhook";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { startSwapPoller } from "../swap-poller";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -63,6 +64,11 @@ async function startServer() {
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
   });
+
+  const pollerIntervalMs = parseInt(process.env.SWAP_POLLER_INTERVAL_MS || "30000");
+  if (pollerIntervalMs > 0) {
+    startSwapPoller({ intervalMs: pollerIntervalMs });
+  }
 }
 
 startServer().catch(console.error);

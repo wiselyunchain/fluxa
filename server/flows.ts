@@ -1,12 +1,7 @@
-import { Connection, Keypair, PublicKey, sendAndConfirmTransaction, Transaction } from "@solana/web3.js";
-import {
-  createTransferInstruction,
-  getAssociatedTokenAddressSync,
-} from "@solana/spl-token";
 import { createDepositOrder, createWithdrawalOrder } from "./paj-cash";
-import { insertFiatRequest } from "./db";
-import { decryptSecret } from "./wallet-crypto";
-import { ENV } from "./_core/env";
+import { getNearIntentClient } from "./near-intent";
+import { insertFiatRequest, insertUserTransaction } from "./db";
+import { sendSplToken } from "./solana-transfer";
 import type { SolanaWallet } from "../drizzle/schema";
 
 export class FlowService {
@@ -95,32 +90,86 @@ export class FlowService {
   }
 
   /**
-   * NEAR Intent path stubbed until Phase 4 lands real wiring.
+   * USDC (or other SPL) -> any destination via NEAR Intents 1Click.
+   * Requests a quote, transfers the input tokens to the solver-controlled deposit
+   * address, persists a swap row in user_transactions, and notifies 1Click of the
+   * deposit so it can settle.
    */
-  static async handleSwap(): Promise<never> {
-    throw new Error("Swap flow not implemented yet (Phase 4)");
+  static async handleSwap(input: {
+    userId: number;
+    userWallet: Pick<SolanaWallet, "mainAddress" | "mainKeypair">;
+    fromMintAddress: string;       // SPL mint to transfer from the user's wallet
+    originAsset: string;            // 1Click assetId, e.g. nep141:sol-...omft.near
+    destinationAsset: string;
+    amountBaseUnits: string;        // integer string per 1Click spec
+    recipient?: string;             // defaults to user's main address
+    slippageBps?: number;
+    deadlineSeconds?: number;
+  }) {
+    const client = getNearIntentClient();
+    const recipient = input.recipient ?? input.userWallet.mainAddress;
+    const deadlineSeconds = input.deadlineSeconds ?? 600;
+
+    const quote = await client.quote({
+      swapType: "EXACT_INPUT",
+      slippageTolerance: input.slippageBps ?? 100,
+      originAsset: input.originAsset,
+      destinationAsset: input.destinationAsset,
+      amount: input.amountBaseUnits,
+      depositType: "ORIGIN_CHAIN",
+      refundType: "ORIGIN_CHAIN",
+      refundTo: input.userWallet.mainAddress,
+      recipientType: "DESTINATION_CHAIN",
+      recipient,
+      deadline: new Date(Date.now() + deadlineSeconds * 1000).toISOString(),
+    });
+
+    const transferSignature = await sendSplToken({
+      fromWallet: input.userWallet,
+      toAddress: quote.quote.depositAddress,
+      mint: input.fromMintAddress,
+      amount: BigInt(input.amountBaseUnits),
+    });
+
+    const txn = await insertUserTransaction({
+      userId: input.userId,
+      type: "swap",
+      status: "pending",
+      fromChain: "SOLANA",
+      toChain: null,
+      fromToken: input.originAsset,
+      toToken: input.destinationAsset,
+      fromAmount: quote.quote.amountInFormatted ?? input.amountBaseUnits,
+      toAmount: quote.quote.amountOutFormatted ?? quote.quote.amountOut,
+      nearIntentId: quote.correlationId,
+      nearIntentDepositAddress: quote.quote.depositAddress,
+      nearIntentDepositMemo: quote.quote.depositMemo ?? null,
+    });
+
+    // Best-effort deposit notification so the solver can pick up the transfer
+    // sooner. If this fails, the solver's deposit-watcher will still detect the
+    // on-chain transfer; we don't want to roll back the user-visible swap row.
+    try {
+      await client.submitDeposit({
+        txHash: transferSignature,
+        depositAddress: quote.quote.depositAddress,
+      });
+    } catch (err) {
+      console.warn(`[Swap] submitDeposit notification failed for ${quote.correlationId}:`, err);
+    }
+
+    return {
+      transactionId: txn.id,
+      correlationId: quote.correlationId,
+      transferSignature,
+      depositAddress: quote.quote.depositAddress,
+      depositMemo: quote.quote.depositMemo,
+      amountIn: quote.quote.amountIn,
+      amountOut: quote.quote.amountOut,
+      amountInFormatted: quote.quote.amountInFormatted,
+      amountOutFormatted: quote.quote.amountOutFormatted,
+      deadline: quote.quote.deadline,
+    };
   }
 }
 
-async function sendSplToken(args: {
-  fromWallet: Pick<SolanaWallet, "mainAddress" | "mainKeypair">;
-  toAddress: string;
-  mint: string;
-  amount: bigint;
-}): Promise<string> {
-  const secretKey = new Uint8Array(decryptSecret(args.fromWallet.mainKeypair));
-  const keypair = Keypair.fromSecretKey(secretKey);
-  const connection = new Connection(ENV.solanaRpcUrl, "confirmed");
-  const mint = new PublicKey(args.mint);
-  const sender = new PublicKey(args.fromWallet.mainAddress);
-  const recipient = new PublicKey(args.toAddress);
-
-  const sourceAta = getAssociatedTokenAddressSync(mint, sender);
-  const destAta = getAssociatedTokenAddressSync(mint, recipient);
-
-  const tx = new Transaction().add(
-    createTransferInstruction(sourceAta, destAta, sender, args.amount),
-  );
-
-  return sendAndConfirmTransaction(connection, tx, [keypair]);
-}

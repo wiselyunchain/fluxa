@@ -21,6 +21,7 @@ export const ENV = {
   pajCashUsdcMint: process.env.PAJ_CASH_USDC_MINT ?? "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
   // App
   appBaseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000",
-  nearIntentApiUrl: process.env.NEAR_INTENT_API_URL ?? "https://api.near-intent.com",
+  nearIntentApiUrl: process.env.NEAR_INTENT_API_URL ?? "https://1click.chaindefuser.com/v0",
+  nearIntentApiKey: process.env.NEAR_INTENT_API_KEY ?? "",
   walletEncryptionKey: process.env.WALLET_ENCRYPTION_KEY ?? "",
 };
