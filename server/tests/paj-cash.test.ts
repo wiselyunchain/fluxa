@@ -35,7 +35,7 @@ vi.mock("paj_ramp", () => ({
   Chain: { SOLANA: "SOLANA", MONAD: "MONAD" },
 }));
 
-vi.mock("./db", () => ({
+vi.mock("../db", () => ({
   getActivePajCashSession: mocks.getActivePajCashSession,
   upsertPajCashSession: mocks.upsertPajCashSession,
 }));
@@ -49,8 +49,8 @@ import {
   listBanks,
   resolveAccount,
   getRates,
-} from "./paj-cash";
-import { encryptSecret } from "./wallet-crypto";
+} from "../services/paj-cash";
+import { encryptSecret } from "../utils/wallet-crypto";
 
 beforeEach(() => {
   Object.values(mocks).forEach((m) => {

@@ -6,12 +6,12 @@ import { z } from "zod";
 import { users, solanaWallets } from "../drizzle/schema";
 import { getDb, getUserByOpenId } from "./db";
 import { eq } from "drizzle-orm";
-import { flowRouter } from "./flow-procedures";
-import { adminRouter } from "./admin";
-import { umbraRouter } from "./umbra-procedures";
+import { flowRouter } from "./routers/flow";
+import { adminRouter } from "./routers/admin";
+import { umbraRouter } from "./routers/umbra";
 import { Keypair } from "@solana/web3.js";
 import { randomBytes } from "crypto";
-import { encryptSecret } from "./wallet-crypto";
+import { encryptSecret } from "./utils/wallet-crypto";
 
 export const appRouter = router({
   system: systemRouter,

@@ -13,25 +13,25 @@ const mocks = vi.hoisted(() => ({
   createWithdrawalOrder: vi.fn(),
 }));
 
-vi.mock("./near-intent", () => ({
+vi.mock("../services/near-intent", () => ({
   getNearIntentClient: mocks.getNearIntentClient,
 }));
 
-vi.mock("./solana-transfer", () => ({
+vi.mock("../utils/solana-transfer", () => ({
   sendSplToken: mocks.sendSplToken,
 }));
 
-vi.mock("./db", () => ({
+vi.mock("../db", () => ({
   insertUserTransaction: mocks.insertUserTransaction,
   insertFiatRequest: mocks.insertFiatRequest,
 }));
 
-vi.mock("./paj-cash", () => ({
+vi.mock("../services/paj-cash", () => ({
   createDepositOrder: mocks.createDepositOrder,
   createWithdrawalOrder: mocks.createWithdrawalOrder,
 }));
 
-import { FlowService } from "./flows";
+import { FlowService } from "../services/flows";
 
 const WALLET = {
   mainAddress: "SoLanaUser111",

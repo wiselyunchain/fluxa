@@ -10,16 +10,16 @@ const mocks = vi.hoisted(() => ({
   getNearIntentClient: vi.fn(),
 }));
 
-vi.mock("./db", () => ({
+vi.mock("../db", () => ({
   getPendingSwapTransactions: mocks.getPendingSwapTransactions,
   updateUserTransactionStatus: mocks.updateUserTransactionStatus,
 }));
 
-vi.mock("./near-intent", () => ({
+vi.mock("../services/near-intent", () => ({
   getNearIntentClient: mocks.getNearIntentClient,
 }));
 
-import { runSwapPollerOnce } from "./swap-poller";
+import { runSwapPollerOnce } from "../services/swap-poller";
 
 function makeTxn(overrides: Record<string, unknown> = {}) {
   return {

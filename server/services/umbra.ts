@@ -6,14 +6,14 @@ import {
   createSignerFromPrivateKeyBytes,
 } from "@umbra-privacy/sdk";
 import { address as toSolanaAddress, getAddressDecoder } from "@solana/kit";
-import { ENV } from "./_core/env";
-import { decryptSecret } from "./wallet-crypto";
+import { ENV } from "../_core/env";
+import { decryptSecret } from "../utils/wallet-crypto";
 import {
   upsertUmbraEncryptedBalance,
   insertUmbraUtxoIfNew,
   insertUserTransaction,
-} from "./db";
-import type { SolanaWallet } from "../drizzle/schema";
+} from "../db";
+import type { SolanaWallet } from "../../drizzle/schema";
 
 type UmbraNetwork = "mainnet" | "devnet" | "localnet";
 

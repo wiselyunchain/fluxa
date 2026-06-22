@@ -10,8 +10,8 @@ import {
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 import { decryptSecret } from "./wallet-crypto";
-import { ENV } from "./_core/env";
-import type { SolanaWallet } from "../drizzle/schema";
+import { ENV } from "../_core/env";
+import type { SolanaWallet } from "../../drizzle/schema";
 
 export async function sendSplToken(args: {
   fromWallet: Pick<SolanaWallet, "mainAddress" | "mainKeypair">;

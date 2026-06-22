@@ -14,18 +14,18 @@ const mocks = vi.hoisted(() => ({
   shieldPublicBalance: vi.fn(async () => ({ queueSignature: "shield-sig" })),
 }));
 
-vi.mock("./db", () => ({
+vi.mock("../db", () => ({
   getFiatRequestByReference: mocks.getFiatRequestByReference,
   updateFiatRequestStatus: mocks.updateFiatRequestStatus,
   insertUserTransaction: mocks.insertUserTransaction,
   getUserWallets: mocks.getUserWallets,
 }));
 
-vi.mock("./umbra", () => ({
+vi.mock("../services/umbra", () => ({
   shieldPublicBalance: mocks.shieldPublicBalance,
 }));
 
-import { registerPajCashWebhook } from "./paj-cash-webhook";
+import { registerPajCashWebhook } from "../routes/paj-cash-webhook";
 
 function buildApp() {
   const app = express();

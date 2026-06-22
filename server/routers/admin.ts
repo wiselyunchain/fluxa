@@ -1,7 +1,7 @@
-import { adminProcedure, router } from "./_core/trpc";
+import { adminProcedure, router } from "../_core/trpc";
 import { z } from "zod";
-import { users, userTransactions, riskFlags, auditLogs } from "../drizzle/schema";
-import { getDb } from "./db";
+import { users, userTransactions, riskFlags, auditLogs } from "../../drizzle/schema";
+import { getDb } from "../db";
 import { TRPCError } from "@trpc/server";
 import {
   and,
@@ -15,7 +15,7 @@ import {
   sum,
   type SQL,
 } from "drizzle-orm";
-import { initiatePlatformSession, verifyPlatformSession } from "./paj-cash";
+import { initiatePlatformSession, verifyPlatformSession } from "../services/paj-cash";
 
 const ACTIVE_USER_WINDOW_DAYS = 30;
 

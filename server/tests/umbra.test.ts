@@ -34,7 +34,7 @@ vi.mock("@solana/kit", () => ({
   getAddressDecoder: () => ({ decode: mocks.mockDecode }),
 }));
 
-vi.mock("./db", () => ({
+vi.mock("../db", () => ({
   upsertUmbraEncryptedBalance: mocks.mockUpsertUmbra,
   insertUmbraUtxoIfNew: mocks.mockInsertUtxo,
   insertUserTransaction: mocks.mockInsertUserTxn,
@@ -58,13 +58,13 @@ const {
   mockDecode,
 } = mocks;
 
-import { encryptSecret } from "./wallet-crypto";
+import { encryptSecret } from "../utils/wallet-crypto";
 import {
   shieldPublicBalance,
   unshieldEncryptedBalance,
   scanIncomingUtxos,
   UMBRA_SUPPORTED_TOKENS,
-} from "./umbra";
+} from "../services/umbra";
 
 function makeWallet() {
   const secretKey = randomBytes(64);

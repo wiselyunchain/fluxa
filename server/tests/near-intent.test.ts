@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { NearIntentClient, type QuoteRequest } from "./near-intent";
+import { NearIntentClient, type QuoteRequest } from "../services/near-intent";
 
 interface CapturedCall {
   url: string;

@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { protectedProcedure, router } from "./_core/trpc";
-import { getUserWallets, getClaimableUmbraUtxos } from "./db";
-import { unshieldEncryptedBalance, scanIncomingUtxos } from "./umbra";
+import { protectedProcedure, router } from "../_core/trpc";
+import { getUserWallets, getClaimableUmbraUtxos } from "../db";
+import { unshieldEncryptedBalance, scanIncomingUtxos } from "../services/umbra";
 
 export const umbraRouter = router({
   /**

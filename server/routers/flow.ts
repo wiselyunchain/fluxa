@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "./_core/trpc";
-import { FlowService } from "./flows";
-import { getUserWallets } from "./db";
+import { protectedProcedure, router } from "../_core/trpc";
+import { FlowService } from "../services/flows";
+import { getUserWallets } from "../db";
 
 export const flowRouter = router({
   deposit: protectedProcedure

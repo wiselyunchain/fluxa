@@ -1,8 +1,8 @@
 import { createDepositOrder, createWithdrawalOrder } from "./paj-cash";
 import { getNearIntentClient } from "./near-intent";
-import { insertFiatRequest, insertUserTransaction } from "./db";
-import { sendSplToken } from "./solana-transfer";
-import type { SolanaWallet } from "../drizzle/schema";
+import { insertFiatRequest, insertUserTransaction } from "../db";
+import { sendSplToken } from "../utils/solana-transfer";
+import type { SolanaWallet } from "../../drizzle/schema";
 
 export class FlowService {
   /**

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import type { TrpcContext } from "./_core/context";
+import type { TrpcContext } from "../_core/context";
 
 vi.hoisted(() => {
   process.env.WALLET_ENCRYPTION_KEY = "0".repeat(64);
@@ -63,7 +63,7 @@ const dbModule = vi.hoisted(() => ({
   getDbImpl: vi.fn(async (): Promise<unknown> => null),
 }));
 
-vi.mock("./db", () => ({
+vi.mock("../db", () => ({
   getDb: () => dbModule.getDbImpl(),
   // The webhook + flows code may import other helpers; provide harmless stubs
   // so any incidental import path resolves.
@@ -83,7 +83,7 @@ vi.mock("./db", () => ({
   upsertUser: vi.fn(async () => {}),
 }));
 
-import { appRouter } from "./routers";
+import { appRouter } from "../routers";
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 

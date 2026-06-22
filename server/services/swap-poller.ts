@@ -1,9 +1,9 @@
 import {
   getPendingSwapTransactions,
   updateUserTransactionStatus,
-} from "./db";
+} from "../db";
 import { getNearIntentClient, type QuoteStatus, type NearIntentClient } from "./near-intent";
-import type { UserTransaction } from "../drizzle/schema";
+import type { UserTransaction } from "../../drizzle/schema";
 
 export interface SwapPollerOptions {
   intervalMs?: number;

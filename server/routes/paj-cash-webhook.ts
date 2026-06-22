@@ -4,9 +4,9 @@ import {
   updateFiatRequestStatus,
   insertUserTransaction,
   getUserWallets,
-} from "./db";
-import { shieldPublicBalance } from "./umbra";
-import { ENV } from "./_core/env";
+} from "../db";
+import { shieldPublicBalance } from "../services/umbra";
+import { ENV } from "../_core/env";
 
 type PajCashWebhookStatus = "INIT" | "PAID" | "COMPLETED" | "FAILED" | "CANCELLED";
 type PajCashTransactionType = "ON_RAMP" | "OFF_RAMP";

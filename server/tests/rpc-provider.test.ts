@@ -4,7 +4,7 @@ import {
   getGasPrice,
   getTransactionStatus,
   estimateGas,
-} from "./rpc-provider";
+} from "../services/rpc-provider";
 
 describe("RPC Provider", () => {
   it(

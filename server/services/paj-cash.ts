@@ -20,12 +20,12 @@ import {
   type Bank,
   type ResolveBankAccount,
 } from "paj_ramp";
-import { ENV } from "./_core/env";
-import { encryptSecret, decryptSecret } from "./wallet-crypto";
+import { ENV } from "../_core/env";
+import { encryptSecret, decryptSecret } from "../utils/wallet-crypto";
 import {
   getActivePajCashSession,
   upsertPajCashSession,
-} from "./db";
+} from "../db";
 
 let sdkInitialized = false;
 
