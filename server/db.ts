@@ -135,11 +135,27 @@ export async function getWalletByAddress(address: string): Promise<SolanaWallet 
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function getUserTransactions(userId: number, limit: number = 50): Promise<UserTransaction[]> {
+export async function getUserTransactions(
+  userId: number,
+  opts: {
+    type?: UserTransaction["type"];
+    status?: UserTransaction["status"];
+    limit?: number;
+  } = {},
+): Promise<UserTransaction[]> {
   const db = await getDb();
   if (!db) return [];
 
-  return db.select().from(userTransactions).where(eq(userTransactions.userId, userId)).limit(limit);
+  const filters = [eq(userTransactions.userId, userId)];
+  if (opts.type) filters.push(eq(userTransactions.type, opts.type));
+  if (opts.status) filters.push(eq(userTransactions.status, opts.status));
+
+  return db
+    .select()
+    .from(userTransactions)
+    .where(and(...filters))
+    .orderBy(desc(userTransactions.createdAt))
+    .limit(opts.limit ?? 50);
 }
 
 export async function getUserFiatRequests(userId: number): Promise<FiatRequest[]> {

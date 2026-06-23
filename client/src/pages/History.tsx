@@ -17,16 +17,31 @@ const typeIcons: Record<string, any> = {
 
 const statusColors: Record<string, string> = {
   pending: "text-yellow-600",
-  completed: "text-green-600",
+  confirmed: "text-green-600",
   failed: "text-red-600",
   cancelled: "text-gray-600",
 };
 
 const statusIcons: Record<string, any> = {
   pending: <Clock className="w-4 h-4" />,
-  completed: <CheckCircle className="w-4 h-4" />,
+  confirmed: <CheckCircle className="w-4 h-4" />,
   failed: <XCircle className="w-4 h-4" />,
   cancelled: <XCircle className="w-4 h-4" />,
+};
+
+type HistoryTx = {
+  id: number;
+  type: string;
+  status: string;
+  fromChain: string | null;
+  toChain: string | null;
+  fromToken: string | null;
+  toToken: string | null;
+  fromAmount: string;
+  toAmount: string | null;
+  nearIntentId: string | null;
+  pajCashReference: string | null;
+  createdAt: string | Date;
 };
 
 export default function History() {
@@ -35,7 +50,7 @@ export default function History() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: transactions, isLoading } = trpc.swap.getHistory.useQuery(
+  const { data: transactions, isLoading } = trpc.flow.getHistory.useQuery(
     {
       type: filterType !== "all" ? (filterType as any) : undefined,
       status: filterStatus !== "all" ? (filterStatus as any) : undefined,
@@ -74,8 +89,6 @@ export default function History() {
                 <SelectItem value="deposit">Deposit</SelectItem>
                 <SelectItem value="withdrawal">Withdrawal</SelectItem>
                 <SelectItem value="swap">Swap</SelectItem>
-                <SelectItem value="onramp">On-Ramp</SelectItem>
-                <SelectItem value="offramp">Off-Ramp</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -89,7 +102,7 @@ export default function History() {
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="confirmed">Confirmed</SelectItem>
                 <SelectItem value="failed">Failed</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>
@@ -106,11 +119,10 @@ export default function History() {
               <Skeleton className="h-20" />
             </>
           ) : transactions && transactions.length > 0 ? (
-            transactions.map((tx) => (
+            transactions.map((tx: HistoryTx) => (
               <Card key={tx.id} className="hover:bg-card/80 transition cursor-pointer">
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
-                    {/* Left: Icon and Details */}
                     <div className="flex items-center gap-4 flex-1">
                       <div className="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center text-accent">
                         {typeIcons[tx.type] || <TrendingUp className="w-4 h-4" />}
@@ -122,7 +134,7 @@ export default function History() {
                           {tx.fromChain && tx.toChain && ` (${tx.fromChain} → ${tx.toChain})`}
                         </p>
                         <p className="text-sm text-muted-foreground truncate">
-                          {tx.description || `${tx.fromAmount} ${tx.fromToken?.toUpperCase()}`}
+                          {tx.fromAmount} {tx.fromToken?.toUpperCase() ?? ""}
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
                           {new Date(tx.createdAt).toLocaleDateString()} {new Date(tx.createdAt).toLocaleTimeString()}
@@ -130,41 +142,28 @@ export default function History() {
                       </div>
                     </div>
 
-                    {/* Middle: Amount */}
                     <div className="text-right mx-4">
                       <p className="font-semibold text-foreground">
-                        {tx.fromAmount} {tx.fromToken?.toUpperCase()}
+                        {tx.fromAmount} {tx.fromToken?.toUpperCase() ?? ""}
                       </p>
                       {tx.toAmount && (
                         <p className="text-sm text-accent">
-                          → {tx.toAmount} {tx.toToken?.toUpperCase()}
+                          → {tx.toAmount} {tx.toToken?.toUpperCase() ?? ""}
                         </p>
                       )}
                     </div>
 
-                    {/* Right: Status */}
                     <div className={`flex items-center gap-2 ${statusColors[tx.status]}`}>
                       {statusIcons[tx.status]}
                       <span className="text-sm font-medium capitalize">{tx.status}</span>
                     </div>
                   </div>
 
-                  {/* Fee and Slippage Info */}
-                  {(tx.fee || tx.slippage) && (
+                  {(tx.pajCashReference || tx.nearIntentId) && (
                     <div className="mt-3 pt-3 border-t border-border text-xs text-muted-foreground">
-                      <div className="flex justify-between">
-                        {tx.fee && <span>Fee: {tx.fee} {tx.fromToken?.toUpperCase()}</span>}
-                        {tx.slippage && <span>Slippage: {tx.slippage}%</span>}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Transaction Hash */}
-                  {tx.txHash && (
-                    <div className="mt-3 pt-3 border-t border-border">
-                      <p className="text-xs text-muted-foreground">
-                        Hash: <span className="font-mono text-foreground">{tx.txHash.substring(0, 16)}...</span>
-                      </p>
+                      {tx.pajCashReference && <span>Paj Cash ref: <span className="font-mono">{tx.pajCashReference}</span></span>}
+                      {tx.pajCashReference && tx.nearIntentId && <span className="mx-2">·</span>}
+                      {tx.nearIntentId && <span>1Click id: <span className="font-mono">{tx.nearIntentId}</span></span>}
                     </div>
                   )}
                 </CardContent>

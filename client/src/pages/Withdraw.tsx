@@ -12,11 +12,14 @@ export default function Withdraw() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   
+  // bankId is a placeholder until paj_ramp.getBanks() is exposed via tRPC
+  // and rendered as a selector. "044" is Access Bank's legacy code; replace
+  // with a real Paj bankId once the picker lands.
   const [formData, setFormData] = useState({
     amount: "",
     accountName: "",
     accountNumber: "",
-    bankCode: "044" // Default to Access Bank for mock
+    bankId: "044"
   });
   
   const withdrawMutation = trpc.flow.withdraw.useMutation({
@@ -45,11 +48,10 @@ export default function Withdraw() {
     e.preventDefault();
     if (!formData.amount || isNaN(Number(formData.amount))) return;
     
-    withdrawMutation.mutate({ 
+    withdrawMutation.mutate({
       usdtAmount: Number(formData.amount),
-      bankAccount: formData.accountNumber,
-      accountName: formData.accountName,
-      bankCode: formData.bankCode
+      bankId: formData.bankId,
+      accountNumber: formData.accountNumber,
     });
   };
 

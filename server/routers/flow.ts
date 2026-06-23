@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { FlowService } from "../services/flows";
-import { getUserWallets } from "../db";
+import { getUserWallets, getUserTransactions } from "../db";
 
 export const flowRouter = router({
   deposit: protectedProcedure
@@ -41,6 +41,22 @@ export const flowRouter = router({
         bankId: input.bankId,
         accountNumber: input.accountNumber,
         userWallet: wallet,
+      });
+    }),
+
+  getHistory: protectedProcedure
+    .input(
+      z.object({
+        type: z.enum(["deposit", "withdrawal", "swap"]).optional(),
+        status: z.enum(["pending", "confirmed", "failed", "cancelled"]).optional(),
+        limit: z.number().int().positive().max(500).default(100),
+      }).optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      return getUserTransactions(ctx.user.id, {
+        type: input?.type,
+        status: input?.status,
+        limit: input?.limit,
       });
     }),
 

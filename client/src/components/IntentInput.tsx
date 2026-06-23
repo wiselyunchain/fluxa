@@ -11,25 +11,6 @@ export default function IntentInput() {
   const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
 
-  const swapMutation = trpc.flow.swap.useMutation({
-    onSuccess: () => {
-      toast({
-        title: "Intent Executed Successfully",
-        description: "Your funds have been privately routed.",
-      });
-      setIsProcessing(false);
-      setIntent("");
-    },
-    onError: (error) => {
-      toast({
-        title: "Intent Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-      setIsProcessing(false);
-    }
-  });
-
   const depositMutation = trpc.flow.deposit.useMutation({
     onSuccess: () => {
       toast({
@@ -59,15 +40,12 @@ export default function IntentInput() {
     const lowerIntent = intent.toLowerCase();
     
     if (lowerIntent.includes("sell") || lowerIntent.includes("swap") || lowerIntent.includes("convert")) {
-      // Mock parsing: "Sell 100 TON for USDT"
-      // In production, this would use an LLM or robust regex parser backend
-      swapMutation.mutate({
-        fromToken: "TON",
-        fromChain: "TON",
-        fromAmount: 100,
-        toToken: "USDT",
-        toChain: "Solana",
+      toast({
+        title: "Swap intents not yet wired",
+        description: "Use the Swap page directly until natural-language parsing is implemented.",
+        variant: "destructive",
       });
+      setIsProcessing(false);
     } else if (lowerIntent.includes("buy") || lowerIntent.includes("deposit")) {
       // Mock parsing: "Buy 100000 NGN worth of SOL"
       depositMutation.mutate({
