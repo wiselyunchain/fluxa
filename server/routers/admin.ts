@@ -350,4 +350,71 @@ export const adminRouter = router({
       const { expiresAt } = await verifyPlatformSession(input.email, input.otp);
       return { ok: true, expiresAt: expiresAt.toISOString() };
     }),
+
+  // Get audit logs (admin only)
+  getAuditLogs: adminProcedure
+    .input(z.object({
+      limit: z.number().default(50),
+      offset: z.number().default(0),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+
+      return db.select()
+        .from(auditLogs)
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(input.limit)
+        .offset(input.offset);
+    }),
+
+  // Resolve risk alert (admin only)
+  resolveRiskAlert: adminProcedure
+    .input(z.object({
+      alertId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+
+      await db.update(riskFlags)
+        .set({ resolved: true })
+        .where(eq(riskFlags.id, input.alertId));
+
+      await db.insert(auditLogs).values({
+        adminId: ctx.user.id,
+        action: "resolve_risk_alert",
+        targetUserId: null,
+        details: JSON.stringify({ alertId: input.alertId }),
+      });
+
+      return { success: true };
+    }),
+
+  // Request viewing grant for Umbra transactions (admin only)
+  requestViewingGrant: adminProcedure
+    .input(z.object({
+      transactionId: z.number(),
+      reason: z.string(),
+      targetUserId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+
+      await db.insert(auditLogs).values({
+        adminId: ctx.user.id,
+        action: "request_viewing_grant",
+        targetUserId: input.targetUserId,
+        details: JSON.stringify({
+          transactionId: input.transactionId,
+          reason: input.reason,
+        }),
+      });
+
+      return {
+        success: true,
+        message: "Viewing grant requested securely.",
+      };
+    }),
 });

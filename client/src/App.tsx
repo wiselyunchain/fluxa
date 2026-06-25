@@ -10,6 +10,8 @@ import Deposit from "./pages/Deposit";
 import Withdraw from "./pages/Withdraw";
 import History from "./pages/History";
 import AdminDashboard from "./pages/AdminDashboard";
+import Swap from "./pages/Swap";
+import AnonymousTransfer from "./pages/AnonymousTransfer";
 
 function Router() {
   // make sure to consider if you need authentication for certain routes
@@ -20,6 +22,8 @@ function Router() {
       <Route path={"/deposit"} component={Deposit} />
       <Route path={"/withdraw"} component={Withdraw} />
       <Route path={"/history"} component={History} />
+      <Route path={"/swap"} component={Swap} />
+      <Route path={"/transfer"} component={AnonymousTransfer} />
       <Route path={"/admin"} component={AdminDashboard} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}

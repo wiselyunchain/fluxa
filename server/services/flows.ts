@@ -2,6 +2,7 @@ import { createDepositOrder, createWithdrawalOrder } from "./paj-cash";
 import { getNearIntentClient } from "./near-intent";
 import { insertFiatRequest, insertUserTransaction } from "../db";
 import { sendSplToken } from "../utils/solana-transfer";
+import { unshieldEncryptedBalance } from "./umbra";
 import type { SolanaWallet } from "../../drizzle/schema";
 
 export class FlowService {
@@ -72,16 +73,16 @@ export class FlowService {
       bankAccount: `${input.bankId}:${input.accountNumber}`,
     });
 
-    const transferSignature = await sendSplToken({
-      fromWallet: input.userWallet,
-      toAddress: order.address,
-      mint: order.mint,
-      amount: BigInt(Math.floor(input.usdtAmount)),
+    const unshieldResult = await unshieldEncryptedBalance({
+      userWallet: { ...input.userWallet, userId: input.userId },
+      tokenMint: order.mint,
+      withdrawalAmount: BigInt(Math.floor(input.usdtAmount * 1_000_000)),
+      recipient: order.address,
     });
 
     return {
       reference: order.id,
-      transferSignature,
+      transferSignature: unshieldResult.queueSignature,
       pajCashAddress: order.address,
       fiatAmount: order.fiatAmount,
       rate: order.rate,
@@ -105,6 +106,7 @@ export class FlowService {
     recipient?: string;             // defaults to user's main address
     slippageBps?: number;
     deadlineSeconds?: number;
+    isPrivate?: boolean;
   }) {
     const client = getNearIntentClient();
     const recipient = input.recipient ?? input.userWallet.mainAddress;
@@ -124,12 +126,26 @@ export class FlowService {
       deadline: new Date(Date.now() + deadlineSeconds * 1000).toISOString(),
     });
 
-    const transferSignature = await sendSplToken({
-      fromWallet: input.userWallet,
-      toAddress: quote.quote.depositAddress,
-      mint: input.fromMintAddress,
-      amount: BigInt(input.amountBaseUnits),
-    });
+    let transferSignature: string;
+    
+    if (input.isPrivate) {
+      // For private swap, we unshield from Umbra balance directly to solver's deposit address
+      const { unshieldEncryptedBalance } = await import("./umbra");
+      const unshieldResult = await unshieldEncryptedBalance({
+        userWallet: { ...input.userWallet, userId: input.userId },
+        tokenMint: input.fromMintAddress,
+        withdrawalAmount: BigInt(input.amountBaseUnits),
+        recipient: quote.quote.depositAddress,
+      });
+      transferSignature = unshieldResult.queueSignature;
+    } else {
+      transferSignature = await sendSplToken({
+        fromWallet: input.userWallet,
+        toAddress: quote.quote.depositAddress,
+        mint: input.fromMintAddress,
+        amount: BigInt(input.amountBaseUnits),
+      });
+    }
 
     const txn = await insertUserTransaction({
       userId: input.userId,
@@ -144,6 +160,7 @@ export class FlowService {
       nearIntentId: quote.correlationId,
       nearIntentDepositAddress: quote.quote.depositAddress,
       nearIntentDepositMemo: quote.quote.depositMemo ?? null,
+      isPrivate: input.isPrivate || false,
     });
 
     // Best-effort deposit notification so the solver can pick up the transfer

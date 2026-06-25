@@ -2,7 +2,7 @@ import { boolean, index, integer, numeric, pgEnum, pgTable, serial, text, timest
 
 export const userRole = pgEnum("user_role", ["user", "admin"]);
 export const kycStatus = pgEnum("kyc_status", ["none", "pending", "verified", "rejected"]);
-export const transactionType = pgEnum("transaction_type", ["deposit", "withdrawal", "swap"]);
+export const transactionType = pgEnum("transaction_type", ["deposit", "withdrawal", "swap", "transfer", "receive"]);
 export const transactionStatus = pgEnum("transaction_status", ["pending", "confirmed", "failed", "cancelled"]);
 export const fiatRequestType = pgEnum("fiat_request_type", ["deposit", "withdrawal"]);
 export const fiatRequestStatus = pgEnum("fiat_request_status", ["pending", "processing", "confirmed", "failed"]);
@@ -63,10 +63,12 @@ export const userTransactions = pgTable("user_transactions", {
   toToken: varchar("toToken", { length: 64 }),
   fromAmount: numeric("fromAmount", { precision: 20, scale: 8 }).notNull(),
   toAmount: numeric("toAmount", { precision: 20, scale: 8 }),
+  toAddress: varchar("toAddress", { length: 88 }),
   nearIntentId: varchar("nearIntentId", { length: 255 }),
   nearIntentDepositAddress: varchar("nearIntentDepositAddress", { length: 88 }),
   nearIntentDepositMemo: varchar("nearIntentDepositMemo", { length: 255 }),
   pajCashReference: varchar("pajCashReference", { length: 255 }),
+  isPrivate: boolean("isPrivate").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   confirmedAt: timestamp("confirmedAt"),
 }, (table) => [

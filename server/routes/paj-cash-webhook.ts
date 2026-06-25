@@ -7,6 +7,7 @@ import {
 } from "../db";
 import { shieldPublicBalance } from "../services/umbra";
 import { ENV } from "../_core/env";
+import crypto from "crypto";
 
 type PajCashWebhookStatus = "INIT" | "PAID" | "COMPLETED" | "FAILED" | "CANCELLED";
 type PajCashTransactionType = "ON_RAMP" | "OFF_RAMP";
@@ -40,6 +41,29 @@ export function registerPajCashWebhook(app: Express): void {
     if (!ref || !status) {
       res.status(200).json({ received: true, ignored: "missing id or status" });
       return;
+    }
+
+    // Security: Webhook Authentication
+    if (ENV.pajCashWebhookSecret) {
+      const signature = req.headers["x-pajcash-signature"] as string;
+      if (!signature) {
+        console.warn(`[PajCash webhook] Missing signature header`);
+        res.status(401).json({ error: "unauthorized" });
+        return;
+      }
+      
+      // Calculate expected signature using HMAC SHA256
+      const payload = JSON.stringify(req.body);
+      const expectedSignature = crypto
+        .createHmac("sha256", ENV.pajCashWebhookSecret)
+        .update(payload)
+        .digest("hex");
+        
+      if (signature !== expectedSignature) {
+        console.warn(`[PajCash webhook] Invalid signature. Expected: ${expectedSignature}, Got: ${signature}`);
+        res.status(401).json({ error: "unauthorized" });
+        return;
+      }
     }
 
     const fiatStatus = STATUS_MAP[status];

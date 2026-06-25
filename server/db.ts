@@ -394,3 +394,17 @@ export async function updateUserTransactionStatus(input: {
 
   await db.update(userTransactions).set(patch).where(eq(userTransactions.id, input.id));
 }
+
+export async function deleteUmbraUtxo(userId: number, commitment: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  await db
+    .delete(umbraUtxos)
+    .where(
+      and(
+        eq(umbraUtxos.userId, userId),
+        eq(umbraUtxos.commitment, commitment)
+      )
+    );
+}

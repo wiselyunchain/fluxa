@@ -12,8 +12,17 @@ import {
   upsertUmbraEncryptedBalance,
   insertUmbraUtxoIfNew,
   insertUserTransaction,
+  deleteUmbraUtxo,
 } from "../db";
 import type { SolanaWallet } from "../../drizzle/schema";
+import {
+  getCreateReceiverClaimableUtxoFromEncryptedBalanceProver,
+  getClaimReceiverClaimableUtxoIntoEncryptedBalanceProver,
+} from "@umbra-privacy/web-zk-prover";
+import {
+  getEncryptedBalanceToReceiverClaimableUtxoCreatorFunction,
+  getReceiverClaimableUtxoToEncryptedBalanceClaimerFunction,
+} from "@umbra-privacy/sdk";
 
 type UmbraNetwork = "mainnet" | "devnet" | "localnet";
 
@@ -135,6 +144,130 @@ export async function unshieldEncryptedBalance(input: {
     queueSignature: String(result.queueSignature),
     callbackSignature: result.callbackSignature ? String(result.callbackSignature) : undefined,
     callbackStatus: result.callbackStatus,
+  };
+}
+
+/**
+ * Creates a receiver-claimable UTXO directly from the user's encrypted balance.
+ * Used for sending funds anonymously to another Umbra user.
+ * 
+ * Decrements `umbra_encrypted_balances` and writes a `transfer` row to `user_transactions`.
+ */
+export async function createReceiverClaimableUtxo(input: {
+  userWallet: Pick<SolanaWallet, "userId" | "mainKeypair">;
+  tokenMint: string;
+  transferAmount: bigint;
+  receiverStealthPublicKey: string;
+}): Promise<{
+  queueSignature: string;
+  callbackSignature?: string;
+  callbackStatus?: "finalized" | "pruned" | "timed-out";
+}> {
+  const secretKey = new Uint8Array(decryptSecret(input.userWallet.mainKeypair));
+  const client = await getUmbraClientFromKeypair(secretKey);
+
+  const creator = getEncryptedBalanceToReceiverClaimableUtxoCreatorFunction(
+    { client },
+    { zkProver: getCreateReceiverClaimableUtxoFromEncryptedBalanceProver() }
+  );
+
+  const result = await creator({
+    receiverPublicKey: toSolanaAddress(input.receiverStealthPublicKey),
+    mint: toSolanaAddress(input.tokenMint),
+    amount: input.transferAmount,
+  } as any);
+
+  await upsertUmbraEncryptedBalance({
+    userId: input.userWallet.userId,
+    tokenMint: input.tokenMint,
+    amountDelta: `-${input.transferAmount.toString()}`,
+  });
+
+  await insertUserTransaction({
+    userId: input.userWallet.userId,
+    type: "transfer",
+    status: "confirmed",
+    fromChain: "UMBRA",
+    toChain: "UMBRA",
+    fromToken: input.tokenMint,
+    toToken: input.tokenMint,
+    fromAmount: input.transferAmount.toString(),
+    toAmount: input.transferAmount.toString(),
+    toAddress: input.receiverStealthPublicKey,
+    confirmedAt: new Date(),
+  });
+
+  return {
+    queueSignature: String((result as any).transactionSignature || (result as any).signature || ""),
+    callbackSignature: undefined,
+    callbackStatus: undefined,
+  };
+}
+
+/**
+ * Claims a receiver-claimable UTXO into the user's encrypted balance.
+ * Uses a ZK prover to keep the claim process private.
+ * 
+ * Increments `umbra_encrypted_balances` and removes the UTXO from `umbra_utxos`.
+ */
+export async function claimUtxoToEncryptedBalance(input: {
+  userWallet: Pick<SolanaWallet, "userId" | "mainKeypair">;
+  tokenMint: string;
+  commitment: string;
+  amount: bigint;
+}): Promise<{
+  queueSignature: string;
+  callbackSignature?: string;
+  callbackStatus?: "finalized" | "pruned" | "timed-out";
+}> {
+  const secretKey = new Uint8Array(decryptSecret(input.userWallet.mainKeypair));
+  const client = await getUmbraClientFromKeypair(secretKey);
+
+  const claimer = getReceiverClaimableUtxoToEncryptedBalanceClaimerFunction(
+    { client },
+    { zkProver: getClaimReceiverClaimableUtxoIntoEncryptedBalanceProver() } as any
+  );
+
+  // We need to pass the actual UTXO object to the claimer.
+  // We'll rescan to get it.
+  const scanner = getClaimableUtxoScannerFunction({ client });
+  const scanResult = await scanner(0 as any, 0 as any, undefined);
+  const utxoToClaim = (scanResult.received ?? []).find(
+    (u: any) => bytesToHex(u.h1Hash) === input.commitment
+  );
+  
+  if (!utxoToClaim) {
+    throw new Error("UTXO not found or not claimable by this user");
+  }
+
+  const result = await claimer([utxoToClaim] as any);
+
+  await upsertUmbraEncryptedBalance({
+    userId: input.userWallet.userId,
+    tokenMint: input.tokenMint,
+    amountDelta: input.amount.toString(),
+  });
+
+  // Remove the claimed UTXO from the DB
+  await deleteUmbraUtxo(input.userWallet.userId, input.commitment);
+
+  await insertUserTransaction({
+    userId: input.userWallet.userId,
+    type: "receive",
+    status: "confirmed",
+    fromChain: "UMBRA",
+    toChain: "UMBRA",
+    fromToken: input.tokenMint,
+    toToken: input.tokenMint,
+    fromAmount: input.amount.toString(),
+    toAmount: input.amount.toString(),
+    confirmedAt: new Date(),
+  });
+
+  return {
+    queueSignature: String((result as any).transactionSignature || (result as any).signature || ""),
+    callbackSignature: undefined,
+    callbackStatus: undefined,
   };
 }
 

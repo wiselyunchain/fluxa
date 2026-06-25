@@ -60,6 +60,32 @@ export const flowRouter = router({
       });
     }),
 
+  supportedTokens: protectedProcedure.query(async () => {
+    const { getNearIntentClient } = await import("../services/near-intent");
+    return getNearIntentClient().supportedTokens();
+  }),
+
+  getQuote: protectedProcedure
+    .input(
+      z.object({
+        originAsset: z.string().min(1),
+        destinationAsset: z.string().min(1),
+        amountBaseUnits: z.string().regex(/^\d+$/, "amount must be an integer string in base units"),
+      }),
+    )
+    .query(async ({ input }) => {
+      const { getNearIntentClient } = await import("../services/near-intent");
+      return getNearIntentClient().quote({
+        originAsset: input.originAsset,
+        destinationAsset: input.destinationAsset,
+        amount: input.amountBaseUnits,
+        slippageTolerance: 100, // 1%
+        refundTo: "dummy", // we don't need real addresses for quoting
+        recipient: "dummy",
+        deadline: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      });
+    }),
+
   swap: protectedProcedure
     .input(
       z.object({
@@ -70,6 +96,7 @@ export const flowRouter = router({
         recipient: z.string().optional(),
         slippageBps: z.number().int().min(0).max(10_000).optional(),
         deadlineSeconds: z.number().int().min(60).max(86_400).optional(),
+        isPrivate: z.boolean().default(false).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -87,6 +114,7 @@ export const flowRouter = router({
         recipient: input.recipient,
         slippageBps: input.slippageBps,
         deadlineSeconds: input.deadlineSeconds,
+        isPrivate: input.isPrivate,
       });
     }),
 });

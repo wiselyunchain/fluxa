@@ -15,6 +15,13 @@
       "when": 1780666444607,
       "tag": "0001_steady_northstar",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782392179979,
+      "tag": "0002_swift_azazel",
+      "breakpoints": true
     }
   ]
 }

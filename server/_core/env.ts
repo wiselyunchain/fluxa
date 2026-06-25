@@ -18,6 +18,7 @@ export const ENV = {
   pajCashApiKey: process.env.PAJ_CASH_API_KEY ?? "",
   pajCashEnvironment: process.env.PAJ_CASH_ENVIRONMENT ?? "Staging",
   pajCashWebhookUrl: process.env.PAJ_CASH_WEBHOOK_URL ?? "",
+  pajCashWebhookSecret: process.env.PAJ_CASH_WEBHOOK_SECRET ?? "",
   pajCashUsdcMint: process.env.PAJ_CASH_USDC_MINT ?? "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
   // App
   appBaseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000",

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getUserWallets, getClaimableUmbraUtxos } from "../db";
-import { unshieldEncryptedBalance, scanIncomingUtxos } from "../services/umbra";
+import { unshieldEncryptedBalance, scanIncomingUtxos, createReceiverClaimableUtxo, claimUtxoToEncryptedBalance } from "../services/umbra";
 
 export const umbraRouter = router({
   /**
@@ -67,4 +67,56 @@ export const umbraRouter = router({
   listClaimable: protectedProcedure.query(async ({ ctx }) => {
     return getClaimableUmbraUtxos(ctx.user.id);
   }),
+
+  /**
+   * Send tokens anonymously to another user's stealth public key.
+   */
+  send: protectedProcedure
+    .input(
+      z.object({
+        tokenMint: z.string().min(32),
+        amountBaseUnits: z.string().regex(/^\d+$/, "amount must be an integer string in base units"),
+        receiverStealthPublicKey: z.string().min(32),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const wallets = await getUserWallets(ctx.user.id);
+      const wallet = wallets[0];
+      if (!wallet) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "User has no Solana wallet setup" });
+      }
+
+      return createReceiverClaimableUtxo({
+        userWallet: wallet,
+        tokenMint: input.tokenMint,
+        transferAmount: BigInt(input.amountBaseUnits),
+        receiverStealthPublicKey: input.receiverStealthPublicKey,
+      });
+    }),
+
+  /**
+   * Claim a received UTXO into the user's encrypted balance.
+   */
+  claim: protectedProcedure
+    .input(
+      z.object({
+        tokenMint: z.string().min(32),
+        commitment: z.string().min(1),
+        amountBaseUnits: z.string().regex(/^\d+$/, "amount must be an integer string in base units"),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const wallets = await getUserWallets(ctx.user.id);
+      const wallet = wallets[0];
+      if (!wallet) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "User has no Solana wallet setup" });
+      }
+
+      return claimUtxoToEncryptedBalance({
+        userWallet: wallet,
+        tokenMint: input.tokenMint,
+        commitment: input.commitment,
+        amount: BigInt(input.amountBaseUnits),
+      });
+    }),
 });
