@@ -1,9 +1,10 @@
 import { createDepositOrder, createWithdrawalOrder } from "./paj-cash";
 import { getNearIntentClient } from "./near-intent";
-import { insertFiatRequest, insertUserTransaction } from "../db";
-import { sendSplToken } from "../utils/solana-transfer";
+import { Connection, PublicKey, Keypair } from "@solana/web3.js";
+import { insertFiatRequest, insertUserTransaction, insertSolanaStealthAddress } from "../db";
+import { sendSplToken, buildUnsignedSplTransfer, submitSignedTransaction } from "../utils/solana-transfer";
 import { unshieldEncryptedBalance } from "./umbra";
-import type { SolanaWallet } from "../../drizzle/schema";
+import type { LinkedWallet } from "../../drizzle/schema";
 
 export class FlowService {
   /**
@@ -15,11 +16,11 @@ export class FlowService {
   static async handleDeposit(input: {
     userId: number;
     nairaAmount: number;
-    userWallet: Pick<SolanaWallet, "mainAddress">;
+    userWallet: Pick<LinkedWallet, "address">;
   }) {
     const order = await createDepositOrder({
       nairaAmount: input.nairaAmount,
-      recipientAddress: input.userWallet.mainAddress,
+      recipientAddress: input.userWallet.address,
     });
 
     await insertFiatRequest({
@@ -55,7 +56,7 @@ export class FlowService {
     usdtAmount: number;
     bankId: string;
     accountNumber: string;
-    userWallet: Pick<SolanaWallet, "mainAddress" | "mainKeypair">;
+    userWallet: Pick<LinkedWallet, "address" | "privateKey">;
   }) {
     const order = await createWithdrawalOrder({
       usdtAmount: input.usdtAmount,
@@ -98,21 +99,50 @@ export class FlowService {
    */
   static async handleSwap(input: {
     userId: number;
-    userWallet: Pick<SolanaWallet, "mainAddress" | "mainKeypair">;
-    fromMintAddress: string;       // SPL mint to transfer from the user's wallet
-    originAsset: string;            // 1Click assetId, e.g. nep141:sol-...omft.near
+    userWallet: Pick<LinkedWallet, "address" | "privateKey">;
+    fromMintAddress: string;
+    originAsset: string;
     destinationAsset: string;
-    amountBaseUnits: string;        // integer string per 1Click spec
-    recipient?: string;             // defaults to user's main address
+    amountBaseUnits: string;
+    recipient?: string;
     slippageBps?: number;
     deadlineSeconds?: number;
     isPrivate?: boolean;
+    destinationChain?: "solana" | "evm" | "ton" | "near" | "bitcoin";
+    originChain: "solana" | "evm" | "ton" | "near" | "bitcoin";
   }) {
     const client = getNearIntentClient();
-    const recipient = input.recipient ?? input.userWallet.mainAddress;
+    
+    let ephemeralKeypair: Keypair | undefined;
+    let recipient = input.recipient ?? input.userWallet.address;
+
+    if (input.isPrivate) {
+      const tokens = await client.supportedTokens();
+      const destToken = tokens.find(t => t.assetId === input.destinationAsset);
+      
+      const { UMBRA_SUPPORTED_TOKENS } = await import("./umbra");
+      const supportedMints = Object.values(UMBRA_SUPPORTED_TOKENS);
+      
+      const isDestUmbraSupported = destToken && destToken.blockchain.toLowerCase() === "solana" && destToken.contractAddress && supportedMints.includes(destToken.contractAddress);
+      
+      if (isDestUmbraSupported) {
+        ephemeralKeypair = Keypair.generate();
+        while (ephemeralKeypair.publicKey.toBase58().length !== 43) {
+          ephemeralKeypair = Keypair.generate();
+        }
+        recipient = ephemeralKeypair.publicKey.toBase58();
+      } else {
+        if (!input.recipient) {
+          throw new Error("A recipient address is required for cross-chain private swaps.");
+        }
+        recipient = input.recipient;
+      }
+    }
+
     const deadlineSeconds = input.deadlineSeconds ?? 600;
 
     const quote = await client.quote({
+      dry: false,
       swapType: "EXACT_INPUT",
       slippageTolerance: input.slippageBps ?? 100,
       originAsset: input.originAsset,
@@ -120,7 +150,7 @@ export class FlowService {
       amount: input.amountBaseUnits,
       depositType: "ORIGIN_CHAIN",
       refundType: "ORIGIN_CHAIN",
-      refundTo: input.userWallet.mainAddress,
+      refundTo: input.userWallet.address,
       recipientType: "DESTINATION_CHAIN",
       recipient,
       deadline: new Date(Date.now() + deadlineSeconds * 1000).toISOString(),
@@ -133,7 +163,7 @@ export class FlowService {
       const { unshieldEncryptedBalance } = await import("./umbra");
       const unshieldResult = await unshieldEncryptedBalance({
         userWallet: { ...input.userWallet, userId: input.userId },
-        tokenMint: input.fromMintAddress,
+        tokenMint: input.fromMintAddress === "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" ? "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU" : input.fromMintAddress,
         withdrawalAmount: BigInt(input.amountBaseUnits),
         recipient: quote.quote.depositAddress,
       });
@@ -151,8 +181,8 @@ export class FlowService {
       userId: input.userId,
       type: "swap",
       status: "pending",
-      fromChain: "SOLANA",
-      toChain: null,
+      fromChain: input.originChain.toUpperCase(),
+      toChain: input.destinationChain ? input.destinationChain.toUpperCase() : null,
       fromToken: input.originAsset,
       toToken: input.destinationAsset,
       fromAmount: quote.quote.amountInFormatted ?? input.amountBaseUnits,
@@ -162,6 +192,17 @@ export class FlowService {
       nearIntentDepositMemo: quote.quote.depositMemo ?? null,
       isPrivate: input.isPrivate || false,
     });
+
+    if (input.isPrivate && ephemeralKeypair) {
+      const { encryptSecret } = await import("../utils/wallet-crypto");
+      await insertSolanaStealthAddress({
+        userId: input.userId,
+        stealthAddress: recipient,
+        ephemeralKeypair: encryptSecret(ephemeralKeypair.secretKey),
+        transactionId: txn.id,
+        claimed: false,
+      });
+    }
 
     // Best-effort deposit notification so the solver can pick up the transfer
     // sooner. If this fails, the solver's deposit-watcher will still detect the
@@ -186,6 +227,122 @@ export class FlowService {
       amountInFormatted: quote.quote.amountInFormatted,
       amountOutFormatted: quote.quote.amountOutFormatted,
       deadline: quote.quote.deadline,
+    };
+  }
+
+  /**
+   * Build an unsigned Solana SPL transfer transaction for a NEAR Intent swap.
+   * The frontend signs this with the user's external wallet adapter and
+   * then calls submitSignedSwap to finalize.
+   */
+  static async prepareUnsignedSwap(input: {
+    userId: number;
+    fromAddress: string;
+    fromMintAddress: string;
+    originAsset: string;
+    destinationAsset: string;
+    amountBaseUnits: string;
+    recipient?: string;
+    slippageBps?: number;
+    deadlineSeconds?: number;
+    isPrivate?: boolean;
+    destinationChain?: "solana" | "evm" | "ton" | "near" | "bitcoin";
+  }) {
+    const client = getNearIntentClient();
+    const recipient = input.recipient ?? input.fromAddress;
+
+    const deadlineSeconds = input.deadlineSeconds ?? 600;
+
+    const quote = await client.quote({
+      dry: false,
+      swapType: "EXACT_INPUT",
+      slippageTolerance: input.slippageBps ?? 100,
+      originAsset: input.originAsset,
+      destinationAsset: input.destinationAsset,
+      amount: input.amountBaseUnits,
+      depositType: "ORIGIN_CHAIN",
+      refundType: "ORIGIN_CHAIN",
+      refundTo: input.fromAddress,
+      recipientType: "DESTINATION_CHAIN",
+      recipient,
+      deadline: new Date(Date.now() + deadlineSeconds * 1000).toISOString(),
+    });
+
+    const { unsignedTxBase64, blockhash, lastValidBlockHeight } = await buildUnsignedSplTransfer({
+      fromAddress: input.fromAddress,
+      toAddress: quote.quote.depositAddress,
+      mint: input.fromMintAddress,
+      amount: BigInt(input.amountBaseUnits),
+    });
+
+    return {
+      unsignedTxBase64,
+      blockhash,
+      lastValidBlockHeight,
+      correlationId: quote.correlationId,
+      depositAddress: quote.quote.depositAddress,
+      depositMemo: quote.quote.depositMemo,
+      amountIn: quote.quote.amountIn,
+      amountOut: quote.quote.amountOut,
+      amountInFormatted: quote.quote.amountInFormatted,
+      amountOutFormatted: quote.quote.amountOutFormatted,
+      deadline: quote.quote.deadline,
+    };
+  }
+
+  /**
+   * Submit a pre-signed swap transaction and record the swap.
+   * Called after the user signs with their external wallet.
+   */
+  static async submitSignedSwap(input: {
+    userId: number;
+    signedTxBase64: string;
+    correlationId: string;
+    depositAddress: string;
+    depositMemo?: string;
+    originAsset: string;
+    destinationAsset: string;
+    fromMintAddress: string;
+    amountBaseUnits: string;
+    isPrivate?: boolean;
+    fromChain: "solana" | "evm" | "ton" | "near" | "bitcoin";
+    destinationChain?: "solana" | "evm" | "ton" | "near" | "bitcoin";
+  }) {
+    const client = getNearIntentClient();
+
+    const transferSignature = await submitSignedTransaction(input.signedTxBase64);
+
+    const txn = await insertUserTransaction({
+      userId: input.userId,
+      type: "swap",
+      status: "pending",
+      fromChain: input.fromChain,
+      toChain: input.destinationChain ?? null,
+      fromToken: input.originAsset,
+      toToken: input.destinationAsset,
+      fromAmount: input.amountBaseUnits,
+      toAmount: null,
+      nearIntentId: input.correlationId,
+      nearIntentDepositAddress: input.depositAddress,
+      nearIntentDepositMemo: input.depositMemo ?? null,
+      isPrivate: input.isPrivate || false,
+    });
+
+    try {
+      await client.submitDeposit({
+        txHash: transferSignature,
+        depositAddress: input.depositAddress,
+      });
+    } catch (err) {
+      console.warn(`[Swap] submitDeposit notification failed for ${input.correlationId}:`, err);
+    }
+
+    return {
+      transactionId: txn.id,
+      correlationId: input.correlationId,
+      transferSignature,
+      depositAddress: input.depositAddress,
+      depositMemo: input.depositMemo,
     };
   }
 }

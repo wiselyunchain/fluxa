@@ -7,6 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { Shield, ShieldCheck, Wallet, ArrowDownToLine, ArrowUpFromLine, Repeat } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import IntentInput from "@/components/IntentInput";
+import { ConnectWallet } from "@/components/ConnectWallet";
 
 export default function Dashboard() {
   const { user, loading, isAuthenticated } = useAuth();
@@ -60,6 +61,7 @@ export default function Dashboard() {
             <ShieldCheck className="w-5 h-5" />
             <span className="font-medium text-sm">Privacy Active</span>
           </div>
+          <ConnectWallet />
         </div>
 
         {/* Quick Stats */}
@@ -74,10 +76,10 @@ export default function Dashboard() {
             <CardContent>
               {walletLoading ? (
                 <Skeleton className="h-8 w-32" />
-              ) : wallet ? (
+              ) : wallet?.solana ? (
                 <>
-                  <div className="text-3xl font-bold text-foreground">{wallet.balance} SOL</div>
-                  <p className="text-xs text-muted-foreground mt-1 font-mono">{wallet.mainAddress.substring(0, 8)}...{wallet.mainAddress.substring(wallet.mainAddress.length - 8)}</p>
+                  <div className="text-3xl font-bold text-foreground">{wallet.solana.balance} SOL</div>
+                  <p className="text-xs text-muted-foreground mt-1 font-mono">{wallet.solana.address.substring(0, 8)}...{wallet.solana.address.substring(wallet.solana.address.length - 8)}</p>
                 </>
               ) : (
                 <div className="flex flex-col items-start gap-3">

@@ -1,96 +1,90 @@
-# FluxaX V2 - TODO
+# FluxaX V2 - Development TODOs & Model Prompts
 
-> V2 architecture: privacy-first NGN ↔ crypto bridge built on Solana, with Umbra for stealth addresses / ZK claim proofs, Paj Cash for NGN settlement, NEAR Intent for cross-chain routing, and Magic Block for private routing. The V1 multi-chain wallet / Paystack / LI.FI MVP was torn down in commit `240514f`; what's checked in now is the V2 scaffold (mostly stubs).
-
-## 0. Reconciliation work (do this first)
-
-The teardown left the codebase in a state that doesn't build cleanly. Measured test state: **30 pass / 29 fail (59 total)** via `npx vitest run`.
-
-- [x] Rewrite `server/umbra.test.ts` to match the current `UmbraClient` surface (or restore the deleted `initializeUmbraClient`, `registerUmbraUser`, `depositToEncryptedBalance`, `withdrawFromEncryptedBalance`, `createReceiverClaimableUtxo`, `fetchClaimableUtxos`, `claimUtxoToEncryptedBalance`, `calculateUmbraFee`, `UMBRA_SUPPORTED_TOKENS` exports). 28 failing cases. The deleted exports are recoverable from `git show 17ec3b4:server/umbra.ts`.
-- [x] Fix `server/auth.test.ts:90` — `caller.auth.getWallets()` (plural) does not exist; current router exports `auth.getWallet`. Either rename the test call or rename the procedure to `getWallets` if multi-wallet support is the V2 direction.
-- [x] Add `nearIntentApiUrl` to `server/_core/env.ts` — `near-intent.ts` reads `ENV.nearIntentApiUrl` but the field doesn't exist.
-- [x] Generate and commit an initial drizzle migration (`drizzle/migrations/0000_*.sql` + `meta/_journal.json`) so the schema is reproducible.
-- [x] Replace the mock `createWallet` in `server/routers.ts:83-101` (currently writes `"solana_${id}_${ts}"` and `"encrypted"` literals) with real `@solana/web3.js` keypair generation and AES encryption of the secret key.
-- [x] Fix the hardcoded `"user_main_wallet_address"` sender in `server/flows.ts:51` (`handleWithdrawal`) — read from `solanaWallets`.
-- [x] Resolve `@umbra-privacy/web-zk-prover` ↔ `@umbra-privacy/sdk` peer-dep mismatch (prover v2.0.1 wants sdk v2.0.3, lockfile has v4.0.0). Pin matching versions before wiring real Umbra.
-
-## 1. Phase 1 — Foundation
-
-- [x] Remove v1 (Paystack / LI.FI / multi-chain wallets / balance poller)
-- [x] V2 schema drafted (`drizzle/schema.ts`)
-- [x] Add `umbra_encrypted_balances` and `umbra_utxos` tables required by the V2 plan
-- [x] Verify env vars: `SOLANA_RPC_URL`, `UMBRA_INDEXER_ENDPOINT`, `UMBRA_RELAYER_ENDPOINT`, `PAJ_CASH_API_URL`, `PAJ_CASH_API_KEY`, `NEAR_INTENT_API_URL`, `APP_BASE_URL`
-- [x] Generate + commit initial drizzle migration (see §0)
-
-## 2. Phase 2 — Umbra Privacy
-
-`server/umbra.ts` is a 67-line stub. Both methods return `Math.random()` strings. The `@umbra-privacy/sdk` and `@umbra-privacy/web-zk-prover` deps are installed but unused.
-
-- [x] Wire `@umbra-privacy/sdk` for stealth address derivation (real Diffie-Hellman, not `Math.random()`)
-- [x] Wire `@umbra-privacy/web-zk-prover` for claim proofs
-- [x] Implement Umbra user registration (confidential + anonymous modes)
-- [x] Implement encrypted-balance deposit (public → encrypted)
-- [x] Implement encrypted-balance withdrawal (encrypted → public)
-- [x] Implement UTXO create / scan / claim
-- [x] Implement relayer integration
-- [x] tRPC procedures for all of the above
-- [x] Reinstate / rewrite Umbra test coverage
-
-## 3. Phase 3 — Paj Cash NGN Settlement
-
-`server/paj-cash.ts` is a real axios client but no endpoint receives its webhooks and nothing writes back to the DB.
-
-- [x] Add `POST /api/webhooks/paj-cash` route, verify signature with `verifyWebhookSignature`, dispatch on `event` type
-- [x] On `deposit.confirmed`: mark `fiatRequests` row, trigger Magic Block private send of USDT to user stealth address, insert `userTransactions` row
-- [x] On `withdrawal.confirmed`: mark `fiatRequests` row, insert `userTransactions` row, notify user
-- [x] Persist `pajCashReference` linkage in `fiatRequests` / `userTransactions` from `flows.ts` (currently dropped)
-- [x] Integration tests with a mocked Paj Cash server (the deleted `paj-cash-integration.test.ts` is a starting point in git history)
-
-## 4. Phase 4 — NEAR Intent Routing
-
-`server/near-intent.ts` is a 64-line stub.
-
-- [x] Replace mock `convert()` with real NEAR Intent SDK call
-- [x] Quote generation API for the frontend
-- [x] Slippage / fee surfacing
-- [x] Tests
-- [x] Compose with Umbra: cross-chain → stealth address landing
-
-## 5. Phase 5 — Flows & Backend
-
-`server/flows.ts` orchestrates the three stubs. Skeleton is in place.
-
-- [x] Deposit flow: NGN → Paj Cash → USDT to stealth address → claim (writes `userTransactions`, `solanaStealthAddresses`)
-- [x] Withdrawal flow: stealth USDT → Magic Block private send to Paj Cash stealth address → NGN bank transfer (currently has the hardcoded sender bug — see §0)
-- [x] Swap flow: any token → NEAR Intent → stealth landing (currently writes nothing to DB)
-- [x] Anonymous transfer flow (UTXO mixer): not started
-- [x] Transaction history reads from `userTransactions` (table exists, no writes happen yet)
-- [x] Admin procedures for transaction monitoring & compliance grants (foundation in `server/admin.ts`)
-
-## 6. Phase 6 — Frontend
-
-Present: `Dashboard`, `Deposit`, `Withdraw`, `History`, `Home`, `AdminDashboard`, `ComponentShowcase`, `NotFound`, `IntentInput`, `DashboardLayout`.
-
-- [x] `Swap.tsx` page (deleted in teardown, listed as a V2 deliverable)
-- [x] `AnonymousTransfer.tsx` page
-- [x] Admin sub-pages: `UserManagement`, `TransactionMonitoring`, `ComplianceLogging`, `ViewingGrants`
-- [x] Wire frontend to `flow-procedures.ts` mutations once they hit real services
-- [x] Loading skeletons + error boundaries beyond top-level
-- [x] A11y + cross-browser pass
-
-## 7. Phase 7 — Testing & Security
-
-- [x] End-to-end test for each flow against mocked external services
-- [x] Security review (OWASP top 10) on the webhook + auth + admin surface
-- [x] Privacy audit on the Umbra integration once real
-- [x] Load test the webhook + flow tRPC routes
-- [x] Runbook for mainnet deploy (Solana mainnet RPC, Umbra mainnet, Paj Cash prod, NEAR Intent mainnet)
+This document contains detailed prompts for the remaining major tasks in the FluxaX V2 platform. Each section is designed to be fed into an AI coding assistant (like Claude, GPT-4, or Gemini) to allow it to focus deeply on executing that specific task.
 
 ---
 
-## Known gotchas to remember
+## Task 1: Multichain Self-Custody & Wallet Adapters
+**Status**: 🔴 Not Started
+**Context**: FluxaX V2 currently uses an embedded custodial wallet model (where the user's Solana `mainKeypair` is encrypted in Postgres). Because the core of the app is its multichain feature powered by NEAR Intent, we need to allow users to connect their own self-custodial wallets across ALL supported ecosystems (e.g., Solana, EVM, etc.).
 
-- **`@umbra-privacy/sdk` / `@umbra-privacy/web-zk-prover` are in `package.json` but never imported.** Don't trust dep presence as a signal that integration exists.
-- **`drizzle/migrations/` was wiped** in commit `240514f`. Running `npm run db:push` is the only path to a working DB until migrations are committed.
-- **Paj Cash webhook callback URL is set to `${ENV.appBaseUrl}/api/webhooks/paj-cash`** in both deposit and withdrawal initiation. The route doesn't exist yet; deposits initiated against a real Paj Cash sandbox will never complete.
-- **`rpc-provider.test.ts` hits live Solana / Base / BSC / TON / Avalanche RPCs** with 10s timeouts. Offline or rate-limited CI will see failures unrelated to code.
+> **Prompt for AI Model**:
+> "You are tasked with implementing the 'Multichain Self-Custody' feature for FluxaX V2. Currently, the platform relies exclusively on embedded Solana wallets managed by the backend. Since the core feature of the app is multichain routing via NEAR Intent, we need comprehensive wallet adapter support.
+> 
+> **Objectives:**
+> 1. Integrate ecosystem-specific wallet adapters into the frontend (`client/src/`). For Solana, use `@solana/wallet-adapter-react`. For EVM chains, use a standard library like Wagmi/RainbowKit.
+> 2. Create a unified 'Connect Wallet' UI component that automatically determines or prompts the user for the correct ecosystem based on the chain they are interacting with.
+> 3. **Critical Rule**: Always use specific chain-specific wallet connections (e.g., Phantom/Solflare for Solana, MetaMask/Rabby for EVM) first. Only fallback to 'WalletConnect' (the protocol) if there is no specific native adapter for that chain.
+> 4. Update the backend authentication to handle arbitrary chain public keys, linking them to a `userId` in the database.
+> 5. Update transaction flows (Deposit, Withdraw, Swap). When using an external wallet on any chain, the backend should construct the transaction payload and return it to the frontend for the user to sign via their native wallet extension, rather than signing it server-side.
+> 
+> Please start by analyzing `client/src/App.tsx` and the `solana_wallets` schema. Propose an architecture for handling multi-ecosystem wallet connections before writing code."
+
+---
+
+## Task 2: Anonymous Transfer Flow (Umbra UTXO Mixer)
+**Status**: ✅ Done / Implemented
+**Context**: The UTXO scanning, creation, and claiming of UTXOs using Zero-Knowledge proofs are fully wired up and passing E2E tests.
+
+> **Prompt for AI Model**:
+> "You are tasked with completing the 'Anonymous Transfer' (UTXO Mixer) flow for FluxaX V2 using the Umbra protocol.
+> 
+> **Objectives:**
+> 1. **Dependency Resolution**: Resolve the version mismatch between `@umbra-privacy/web-zk-prover` (v2.0.1 requires SDK v2.0.3) and `@umbra-privacy/sdk` (we are using v4.0.0). Either downgrade the SDK, patch the prover, or find a compatible prover version. Update `package.json` and ensure it builds.
+> 2. **Backend Logic**: In `server/services/umbra.ts`, implement the logic to create a receiver-claimable UTXO (unshielding from an Encrypted Token Account into a UTXO).
+> 3. **Claim Logic**: Implement the ZK-proof claim logic utilizing `getReceiverClaimableUtxoToEncryptedBalanceClaimerFunction` so a receiver can sweep a UTXO into their own encrypted balance.
+> 4. **Frontend UI**: Build the `client/src/pages/AnonymousTransfer.tsx` page. It should allow a user to enter a recipient's Solana Public Key, specify an amount, and execute the anonymous transfer.
+> 5. Write an integration test for this flow.
+> 
+> Please begin by examining `package.json` and `server/services/umbra.ts`, and propose how you will resolve the dependency conflict before writing code."
+
+---
+
+## Task 3: Paj Cash Webhook Security & Multi-Token Settlement
+**Status**: 🟡 Partially Implemented
+**Context**: The Paj Cash webhook handles state transitions but lacks cryptographic signature verification. Additionally, the system hardcodes USDC as the settlement token; we want to support USDT.
+
+> **Prompt for AI Model**:
+> "You are tasked with hardening the Paj Cash webhook and enabling multi-token settlement in FluxaX V2.
+> 
+> **Objectives:**
+> 1. **Webhook Security**: Open `server/routes/paj-cash-webhook.ts`. Implement HMAC or cryptographic signature verification on the incoming payload to ensure it actually originated from Paj Cash. You will need to introduce a `PAJ_CASH_WEBHOOK_SECRET` environment variable and validate the signature header.
+> 2. **Multi-Token Support**: Currently, `ENV.pajCashUsdcMint` is hardcoded for settlement. Refactor the backend to support an array of accepted mints (USDC and USDT). 
+> 3. Update the Paj Cash webhook handler so it trusts the `body.mint` (if provided and whitelisted) instead of falling back to the hardcoded env variable.
+> 4. **UI Update**: Update the Deposit and Withdraw frontend components to allow the user to select between USDC and USDT for their settlement asset.
+> 
+> Please start by reviewing `server/routes/paj-cash-webhook.ts` and `server/services/paj-cash.ts`, then outline the required schema and code changes."
+
+---
+
+## Task 4: Admin Dashboard Sub-pages
+**Status**: 🟡 Skeletons Only
+**Context**: The backend has foundation tRPC procedures for administration, but the frontend lacks the actual dashboards for monitoring.
+
+> **Prompt for AI Model**:
+> "You are tasked with building the frontend Admin sub-pages for FluxaX V2. The top-level `AdminDashboard` exists, but the specific operational views are missing.
+> 
+> **Objectives:**
+> 1. Implement `UserManagement.tsx`: A view to list users, see their linked wallets (embedded vs external), and their total fiat request volumes.
+> 2. Implement `TransactionMonitoring.tsx`: A live feed of all `userTransactions` and `fiatRequests`, with filters for status (Pending, Completed, Failed) and type (Deposit, Withdraw, Swap).
+> 3. Implement `ComplianceLogging.tsx`: A view to surface high-risk transactions or flagged activities.
+> 4. Implement `ViewingGrants.tsx`: A UI allowing admins to request and utilize Umbra viewing keys for specific users if legally required (based on the `server/admin.ts` stubs).
+> 
+> Please review the existing tRPC routers in `server/routers/admin.ts` to see what data is currently available, and wire these React components up using `@trpc/react-query`."
+
+---
+
+## Task 5: End-to-End Test Suite Completion
+**Status**: 🟡 Partially Implemented
+**Context**: We have `e2e_swap.spec.ts` working, but we lack E2E tests for the Deposit and Withdrawal flows.
+
+> **Prompt for AI Model**:
+> "You are tasked with completing the Playwright End-to-End (E2E) testing suite for FluxaX V2. 
+> 
+> **Objectives:**
+> 1. Review the existing `e2e_swap.spec.ts` to understand the testing patterns and how authentication cookies are injected to bypass the OAuth portal.
+> 2. Create `e2e_deposit.spec.ts`: Automate a user navigating to the Deposit page, initiating an NGN deposit, and intercept/mock the Paj Cash webhook to simulate a `COMPLETED` state, verifying that the UI updates and the database records the transaction.
+> 3. Create `e2e_withdraw.spec.ts`: Automate a user withdrawing shielded funds to a bank account, verifying the Umbra unshielding step and the Paj Cash off-ramp API calls.
+> 4. Ensure all tests can run reliably in GitHub Actions (headless mode).
+> 
+> Please start by reviewing `e2e_swap.spec.ts` and the `Deposit.tsx` / `Withdraw.tsx` components, and write a plan for the mocks required for these tests."

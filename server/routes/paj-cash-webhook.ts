@@ -3,7 +3,7 @@ import {
   getFiatRequestByReference,
   updateFiatRequestStatus,
   insertUserTransaction,
-  getUserWallets,
+  getUserWalletByChain,
 } from "../db";
 import { shieldPublicBalance } from "../services/umbra";
 import { ENV } from "../_core/env";
@@ -85,17 +85,18 @@ export function registerPajCashWebhook(app: Express): void {
 
       if (status === "COMPLETED") {
         if (txType === "ON_RAMP") {
-          const wallets = await getUserWallets(fiatRequest.userId);
-          const wallet = wallets[0];
+          const wallet = await getUserWalletByChain(fiatRequest.userId, "solana");
           const mint = body.mint ?? ENV.pajCashUsdcMint;
           const usdtAmount = (body.amount ?? 0).toString();
 
           if (wallet && body.amount) {
             try {
+              const decimals = (mint === "So11111111111111111111111111111111111111112") ? 9 : 6;
+              const scaledAmount = BigInt(Math.floor(body.amount * Math.pow(10, decimals)));
               await shieldPublicBalance({
                 userWallet: wallet,
                 tokenMint: mint,
-                transferAmount: BigInt(Math.floor(body.amount)),
+                transferAmount: scaledAmount,
               });
             } catch (shieldErr) {
               console.error(`[PajCash webhook] Shielding failed for ${ref}:`, shieldErr);
@@ -106,7 +107,7 @@ export function registerPajCashWebhook(app: Express): void {
             userId: fiatRequest.userId,
             type: "deposit",
             status: "confirmed",
-            toChain: "SOLANA",
+            toChain: "solana",
             toToken: mint,
             fromAmount: fiatRequest.amount,
             toAmount: usdtAmount,

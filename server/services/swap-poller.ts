@@ -51,6 +51,54 @@ async function settleOne(
   const next = mapStatus(res.status);
   if (next === null) return null;
 
+  if (next === "confirmed" && txn.isPrivate) {
+    try {
+      const { getSolanaStealthAddressByTransaction, markSolanaStealthAddressClaimed, getUserWalletByChain } = await import("../db");
+      const stealthRow = await getSolanaStealthAddressByTransaction(txn.id);
+
+      if (stealthRow && !stealthRow.claimed) {
+        const tokens = await client.supportedTokens();
+        const tokenDef = tokens.find((t: any) => t.assetId === txn.toToken);
+        const outputMint = tokenDef?.contractAddress;
+
+        if (outputMint && txn.toAmount) {
+          const { shieldPublicBalance, createReceiverClaimableUtxo } = await import("./umbra");
+          
+          const userWallet = await getUserWalletByChain(txn.userId, "solana");
+          
+          if (userWallet) {
+            const ephemeralWallet = {
+              userId: txn.userId,
+              address: stealthRow.stealthAddress,
+              privateKey: stealthRow.ephemeralKeypair,
+            };
+
+            // 1. Shield into ephemeral encrypted balance
+            await shieldPublicBalance({
+              userWallet: ephemeralWallet,
+              tokenMint: outputMint,
+              transferAmount: BigInt(txn.toAmount),
+            });
+
+            // 2. Send to user's stealth public key (which is derived from user's mainAddress in Umbra)
+            await createReceiverClaimableUtxo({
+              userWallet: ephemeralWallet,
+              tokenMint: outputMint,
+              transferAmount: BigInt(txn.toAmount),
+              receiverStealthPublicKey: userWallet.address,
+            });
+
+            // Mark claimed
+            await markSolanaStealthAddressClaimed(stealthRow.id);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`[SwapPoller] Failed to process private Umbra-out for txn #${txn.id}:`, err);
+      return null;
+    }
+  }
+
   await updateUserTransactionStatus({
     id: txn.id,
     status: next,

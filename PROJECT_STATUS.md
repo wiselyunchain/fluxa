@@ -17,7 +17,7 @@ Legend: ✅ done · 🟡 partial · 🔴 stub only · ⬜ not started
 | 1 | Foundation (schema, env, migrations) | ✅ — Schema is fully migrated to Postgres with V2 tables (`pajCashSessions`, `umbraEncryptedBalances`, `umbraUtxos`). Environment variables cover Umbra/Paj Cash/Solana/NEAR. |
 | 2 | Umbra privacy | 🟡 — `shieldPublicBalance` and `unshieldEncryptedBalance` are fully implemented using `@umbra-privacy/sdk`. UTXO scanning is implemented. Receiver-claimable UTXO creation and claiming are blocked pending `@umbra-privacy/web-zk-prover` version mismatch resolution. |
 | 3 | Paj Cash NGN settlement | ✅ — Fully implemented. Replaced hand-rolled client with `paj_ramp` SDK. Webhook route (`POST /api/webhooks/paj-cash`) handles state transitions. Admin OTP capture is built. |
-| 4 | NEAR Intent routing | 🟡 — HTTP client implemented (`quote`, `status`, `submitDeposit`). Swap poller runs and updates statuses. Missing full Umbra integration (shielded-in → swap → shielded-out). |
+| 4 | NEAR Intent routing | ✅ — HTTP client implemented (`quote`, `status`, `submitDeposit`). Swap poller runs and updates statuses. Full Umbra integration (shielded-in → swap → shielded-out) is implemented via ephemeral wallet routing. |
 | 5 | User flows & backend | 🟡 — Deposit, withdrawal, and swap flows implemented and write to `userTransactions` / `fiatRequests`. Anonymous transfer flow (UTXO mixer) not started. |
 | 6 | Frontend | 🟡 — Core pages present. **Missing**: `Swap.tsx`, `AnonymousTransfer.tsx`, admin sub-pages (`UserManagement`, `TransactionMonitoring`, `ComplianceLogging`, `ViewingGrants`). |
 | 7 | Testing & security | 🔴 — no E2E suite, no security/privacy audit, no load tests, no deployment runbook. |

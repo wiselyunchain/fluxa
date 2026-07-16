@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getUserWallets, getClaimableUmbraUtxos } from "../db";
+import { getUserWalletByChain, getClaimableUmbraUtxos } from "../db";
 import { unshieldEncryptedBalance, scanIncomingUtxos, createReceiverClaimableUtxo, claimUtxoToEncryptedBalance } from "../services/umbra";
+
+const solanaAddressSchema = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, 'Invalid Solana address format');
 
 export const umbraRouter = router({
   /**
@@ -12,14 +14,13 @@ export const umbraRouter = router({
   withdraw: protectedProcedure
     .input(
       z.object({
-        tokenMint: z.string().min(32),
+        tokenMint: solanaAddressSchema,
         amountBaseUnits: z.string().regex(/^\d+$/, "amount must be an integer string in base units"),
-        recipient: z.string().optional(),
+        recipient: solanaAddressSchema.optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const wallets = await getUserWallets(ctx.user.id);
-      const wallet = wallets[0];
+      const wallet = await getUserWalletByChain(ctx.user.id, "solana");
       if (!wallet) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "User has no Solana wallet setup" });
       }
@@ -46,8 +47,7 @@ export const umbraRouter = router({
       }).optional(),
     )
     .mutation(async ({ ctx, input }) => {
-      const wallets = await getUserWallets(ctx.user.id);
-      const wallet = wallets[0];
+      const wallet = await getUserWalletByChain(ctx.user.id, "solana");
       if (!wallet) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "User has no Solana wallet setup" });
       }
@@ -74,14 +74,13 @@ export const umbraRouter = router({
   send: protectedProcedure
     .input(
       z.object({
-        tokenMint: z.string().min(32),
+        tokenMint: solanaAddressSchema,
         amountBaseUnits: z.string().regex(/^\d+$/, "amount must be an integer string in base units"),
-        receiverStealthPublicKey: z.string().min(32),
+        receiverStealthPublicKey: solanaAddressSchema,
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const wallets = await getUserWallets(ctx.user.id);
-      const wallet = wallets[0];
+      const wallet = await getUserWalletByChain(ctx.user.id, "solana");
       if (!wallet) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "User has no Solana wallet setup" });
       }
@@ -100,14 +99,13 @@ export const umbraRouter = router({
   claim: protectedProcedure
     .input(
       z.object({
-        tokenMint: z.string().min(32),
+        tokenMint: solanaAddressSchema,
         commitment: z.string().min(1),
         amountBaseUnits: z.string().regex(/^\d+$/, "amount must be an integer string in base units"),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const wallets = await getUserWallets(ctx.user.id);
-      const wallet = wallets[0];
+      const wallet = await getUserWalletByChain(ctx.user.id, "solana");
       if (!wallet) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "User has no Solana wallet setup" });
       }

@@ -3,15 +3,18 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
-import { users, solanaWallets } from "../drizzle/schema";
-import { getDb, getUserByOpenId } from "./db";
-import { eq } from "drizzle-orm";
+import { users, linkedWallets } from "../drizzle/schema";
+import { getDb, getUserByOpenId, getAllUserWallets, insertLinkedWallet, linkExternalWallet } from "./db";
+import { eq, and } from "drizzle-orm";
 import { flowRouter } from "./routers/flow";
 import { adminRouter } from "./routers/admin";
 import { umbraRouter } from "./routers/umbra";
 import { Keypair } from "@solana/web3.js";
 import { randomBytes } from "crypto";
 import { encryptSecret } from "./utils/wallet-crypto";
+import { generateTonWallet, generateNearWallet, generateBitcoinWallet } from "./utils/wallet-provision";
+import { Wallet } from "ethers";
+import { registerWalletOnUmbra } from "./services/umbra";
 
 export const appRouter = router({
   system: systemRouter,
@@ -78,11 +81,8 @@ export const appRouter = router({
       }),
 
     getWallet: protectedProcedure.query(async ({ ctx }) => {
-      const db = await getDb();
-      if (!db) return null;
-
-      const result = await db.select().from(solanaWallets).where(eq(solanaWallets.userId, ctx.user.id)).limit(1);
-      return result.length > 0 ? result[0] : null;
+      const wallets = await getAllUserWallets(ctx.user.id);
+      return wallets;
     }),
 
     createWallet: protectedProcedure
@@ -90,23 +90,134 @@ export const appRouter = router({
         const db = await getDb();
         if (!db) throw new Error("Database unavailable");
 
+        const existing = await db
+          .select()
+          .from(linkedWallets)
+          .where(and(eq(linkedWallets.userId, ctx.user.id), eq(linkedWallets.chain, "solana")))
+          .limit(1);
+
+        if (existing.length > 0) {
+          return { success: true, solanaAddress: existing[0].address, alreadyExists: true };
+        }
+
+        // Provision server-side Solana privacy keypair for Umbra operations
+        const privacyKeypair = Keypair.generate();
+        const privacyAddress = privacyKeypair.publicKey.toBase58();
+        await db
+          .update(users)
+          .set({ solanaPrivacyKeypair: encryptSecret(privacyKeypair.secretKey) })
+          .where(eq(users.id, ctx.user.id));
+
+        // Provision embedded Solana wallet (used for settlement/receiving)
         const keypair = Keypair.generate();
         const mainAddress = keypair.publicKey.toBase58();
-
-        const mainKeypair = encryptSecret(keypair.secretKey);
         const stealthKey = encryptSecret(randomBytes(32));
         const claimKey = encryptSecret(randomBytes(32));
 
-        await db.insert(solanaWallets).values({
+        const solanaWallet = await insertLinkedWallet({
           userId: ctx.user.id,
-          mainAddress,
-          mainKeypair,
+          chain: "solana",
+          address: mainAddress,
+          privateKey: encryptSecret(keypair.secretKey),
+          isExternal: false,
+          isDefault: true,
           stealthKey,
           claimKey,
           balance: "0",
+          umbraScanIndex: 0,
         });
 
-        return { success: true, address: mainAddress };
+        try {
+          await registerWalletOnUmbra(solanaWallet);
+        } catch (err) {
+          console.warn("[createWallet] registerWalletOnUmbra failed:", err);
+        }
+
+        // Provision embedded EVM wallet
+        const evmWallet = Wallet.createRandom();
+        await insertLinkedWallet({
+          userId: ctx.user.id,
+          chain: "evm",
+          address: evmWallet.address,
+          privateKey: encryptSecret(Buffer.from(evmWallet.privateKey.replace("0x", ""), "hex")),
+          isExternal: false,
+          isDefault: true,
+          balance: "0",
+        });
+
+        // Provision embedded TON wallet
+        const tonW = await generateTonWallet();
+        await insertLinkedWallet({
+          userId: ctx.user.id,
+          chain: "ton",
+          address: tonW.address,
+          privateKey: encryptSecret(Buffer.from(tonW.privateKey, "hex")),
+          isExternal: false,
+          isDefault: true,
+          balance: "0",
+        });
+
+        // Provision embedded NEAR wallet
+        const nearW = generateNearWallet();
+        await insertLinkedWallet({
+          userId: ctx.user.id,
+          chain: "near",
+          address: nearW.address,
+          privateKey: encryptSecret(Buffer.from(nearW.privateKey, "hex")),
+          isExternal: false,
+          isDefault: true,
+          balance: "0",
+        });
+
+        // Provision embedded Bitcoin wallet
+        const btcW = await generateBitcoinWallet();
+        await insertLinkedWallet({
+          userId: ctx.user.id,
+          chain: "bitcoin",
+          address: btcW.address,
+          privateKey: encryptSecret(Buffer.from(btcW.privateKey, "hex")),
+          isExternal: false,
+          isDefault: true,
+          balance: "0",
+        });
+
+        return { success: true, solanaAddress: mainAddress };
+      }),
+
+    linkWallet: protectedProcedure
+      .input(z.object({
+        chain: z.enum(["solana", "evm", "ton", "near", "bitcoin"]),
+        address: z.string().min(1),
+        signature: z.string().optional(),
+        message: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const wallet = await linkExternalWallet({
+          userId: ctx.user.id,
+          chain: input.chain,
+          address: input.address,
+        });
+        return { success: true, wallet };
+      }),
+
+    unlinkWallet: protectedProcedure
+      .input(z.object({
+        walletId: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database unavailable");
+
+        const result = await db
+          .delete(linkedWallets)
+          .where(and(
+            eq(linkedWallets.id, input.walletId),
+            eq(linkedWallets.userId, ctx.user.id),
+            eq(linkedWallets.isExternal, true),
+          ))
+          .returning();
+
+        return { success: result.length > 0 };
       }),
   }),
 });

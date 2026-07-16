@@ -115,3 +115,8 @@ CLAUDE.md
 .playwright/
 .claude/
 .playwright_cli/
+
+# Agent artifacts and scratch
+.agents/
+scratch/
+test-results/

@@ -1,5 +1,6 @@
 import { boolean, index, integer, numeric, pgEnum, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
 
+export const chainType = pgEnum("chain_type", ["solana", "evm", "ton", "near", "bitcoin"]);
 export const userRole = pgEnum("user_role", ["user", "admin"]);
 export const kycStatus = pgEnum("kyc_status", ["none", "pending", "verified", "rejected"]);
 export const transactionType = pgEnum("transaction_type", ["deposit", "withdrawal", "swap", "transfer", "receive"]);
@@ -26,6 +27,10 @@ export const users = pgTable("users", {
   kycStatus: kycStatus("kycStatus").default("none").notNull(),
   accountFrozen: boolean("accountFrozen").default(false).notNull(),
   dailyTransactionLimit: numeric("dailyTransactionLimit", { precision: 20, scale: 2 }).default("1000000"),
+  // Server-side Solana privacy keypair for Umbra operations.
+  // Provisioned automatically even when the user brings their own external Solana wallet,
+  // because shielding/unshielding requires server-side keypair material.
+  solanaPrivacyKeypair: text("solanaPrivacyKeypair"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -34,22 +39,37 @@ export const users = pgTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// Solana wallets for users (single wallet per user)
-export const solanaWallets = pgTable("solana_wallets", {
+// Unified linked wallets (replaces per-chain embedded wallets).
+// A user can have MULTIPLE wallets per chain:
+//  - embedded: server-provisioned, privateKey is AES-256-GCM encrypted.
+//  - external: user-connected native adapter (Phantom, MetaMask), no privateKey stored.
+// For chains where native adapters exist (Solana, EVM, TON, NEAR), external
+// wallets are preferred. Embedded fallback wallets are still provisioned
+// automatically for chains the user hasn't connected.
+export const linkedWallets = pgTable("linked_wallets", {
   id: serial("id").primaryKey(),
-  userId: integer("userId").notNull().unique(),
-  mainAddress: varchar("mainAddress", { length: 88 }).notNull().unique(),
-  mainKeypair: text("mainKeypair").notNull(),
-  stealthKey: text("stealthKey").notNull(),
-  claimKey: text("claimKey").notNull(),
+  userId: integer("userId").notNull(),
+  chain: chainType("chain").notNull(),
+  address: varchar("address", { length: 88 }).notNull(),
+  privateKey: text("privateKey"), // null for external wallets, encrypted for embedded
+  isExternal: boolean("isExternal").default(false).notNull(),
+  isDefault: boolean("isDefault").default(false).notNull(), // one default per chain
+  // Solana-specific privacy fields (only for solana-chain wallets)
+  stealthKey: text("stealthKey"),
+  claimKey: text("claimKey"),
+  umbraScanIndex: integer("umbraScanIndex").default(0),
+  // Balance tracking
   balance: numeric("balance", { precision: 20, scale: 8 }).default("0").notNull(),
   lastBalanceUpdate: timestamp("lastBalanceUpdate").defaultNow().notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
-});
+}, (table) => [
+  index("idx_linked_userId").on(table.userId),
+  index("idx_linked_chain").on(table.chain),
+]);
 
-export type SolanaWallet = typeof solanaWallets.$inferSelect;
-export type InsertSolanaWallet = typeof solanaWallets.$inferInsert;
+export type LinkedWallet = typeof linkedWallets.$inferSelect;
+export type InsertLinkedWallet = typeof linkedWallets.$inferInsert;
 
 // Private transactions (user-only visibility)
 export const userTransactions = pgTable("user_transactions", {

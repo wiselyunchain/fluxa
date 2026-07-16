@@ -1,9 +1,11 @@
+import { TRPCError } from "@trpc/server";
 import {
   getUmbraClient as sdkGetUmbraClient,
   getPublicBalanceToEncryptedBalanceDirectDepositorFunction,
   getEncryptedBalanceToPublicBalanceDirectWithdrawerFunction,
   getClaimableUtxoScannerFunction,
   createSignerFromPrivateKeyBytes,
+  getUmbraRelayer,
 } from "@umbra-privacy/sdk";
 import { address as toSolanaAddress, getAddressDecoder } from "@solana/kit";
 import { ENV } from "../_core/env";
@@ -13,8 +15,10 @@ import {
   insertUmbraUtxoIfNew,
   insertUserTransaction,
   deleteUmbraUtxo,
+  updateUmbraScanIndex,
+  getUmbraEncryptedBalance,
 } from "../db";
-import type { SolanaWallet } from "../../drizzle/schema";
+import type { LinkedWallet } from "../../drizzle/schema";
 import {
   getCreateReceiverClaimableUtxoFromEncryptedBalanceProver,
   getClaimReceiverClaimableUtxoIntoEncryptedBalanceProver,
@@ -22,6 +26,7 @@ import {
 import {
   getEncryptedBalanceToReceiverClaimableUtxoCreatorFunction,
   getReceiverClaimableUtxoToEncryptedBalanceClaimerFunction,
+  getUserRegistrationFunction,
 } from "@umbra-privacy/sdk";
 
 type UmbraNetwork = "mainnet" | "devnet" | "localnet";
@@ -61,7 +66,7 @@ async function getUmbraClientFromKeypair(secretKey: Uint8Array) {
  * Updates `umbra_encrypted_balances` bookkeeping on success.
  */
 export async function shieldPublicBalance(input: {
-  userWallet: Pick<SolanaWallet, "userId" | "mainAddress" | "mainKeypair">;
+  userWallet: Pick<LinkedWallet, "userId" | "address" | "privateKey">;
   tokenMint: string;
   transferAmount: bigint;
 }): Promise<{
@@ -69,12 +74,14 @@ export async function shieldPublicBalance(input: {
   callbackSignature?: string;
   callbackStatus?: "finalized" | "pruned" | "timed-out";
 }> {
-  const secretKey = new Uint8Array(decryptSecret(input.userWallet.mainKeypair));
+  const sk = input.userWallet.privateKey;
+  if (!sk) throw new Error("No private key available for Umbra operation");
+  const secretKey = new Uint8Array(decryptSecret(sk));
   const client = await getUmbraClientFromKeypair(secretKey);
 
   const deposit = getPublicBalanceToEncryptedBalanceDirectDepositorFunction({ client });
   const result = await deposit(
-    toSolanaAddress(input.userWallet.mainAddress),
+    toSolanaAddress(input.userWallet.address),
     toSolanaAddress(input.tokenMint),
     input.transferAmount as unknown as never,
   );
@@ -101,7 +108,7 @@ export async function shieldPublicBalance(input: {
  * the user-facing history.
  */
 export async function unshieldEncryptedBalance(input: {
-  userWallet: Pick<SolanaWallet, "userId" | "mainAddress" | "mainKeypair">;
+  userWallet: Pick<LinkedWallet, "userId" | "address" | "privateKey">;
   tokenMint: string;
   withdrawalAmount: bigint;
   recipient?: string; // defaults to user's main address
@@ -110,9 +117,20 @@ export async function unshieldEncryptedBalance(input: {
   callbackSignature?: string;
   callbackStatus?: "finalized" | "pruned" | "timed-out";
 }> {
-  const secretKey = new Uint8Array(decryptSecret(input.userWallet.mainKeypair));
+  const encryptedBalanceRow = await getUmbraEncryptedBalance(input.userWallet.userId, input.tokenMint);
+  const currentBalance = encryptedBalanceRow ? BigInt(encryptedBalanceRow.lastKnownAmount) : BigInt(0);
+  if (currentBalance < input.withdrawalAmount) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Insufficient encrypted balance. Required: ${input.withdrawalAmount.toString()}, Available: ${currentBalance.toString()}`,
+    });
+  }
+
+  const sk = input.userWallet.privateKey;
+  if (!sk) throw new Error("No private key available for Umbra operation");
+  const secretKey = new Uint8Array(decryptSecret(sk));
   const client = await getUmbraClientFromKeypair(secretKey);
-  const recipient = input.recipient ?? input.userWallet.mainAddress;
+  const recipient = input.recipient ?? input.userWallet.address;
 
   const withdraw = getEncryptedBalanceToPublicBalanceDirectWithdrawerFunction({ client });
   const result = await withdraw(
@@ -154,7 +172,7 @@ export async function unshieldEncryptedBalance(input: {
  * Decrements `umbra_encrypted_balances` and writes a `transfer` row to `user_transactions`.
  */
 export async function createReceiverClaimableUtxo(input: {
-  userWallet: Pick<SolanaWallet, "userId" | "mainKeypair">;
+  userWallet: Pick<LinkedWallet, "userId" | "privateKey">;
   tokenMint: string;
   transferAmount: bigint;
   receiverStealthPublicKey: string;
@@ -163,45 +181,76 @@ export async function createReceiverClaimableUtxo(input: {
   callbackSignature?: string;
   callbackStatus?: "finalized" | "pruned" | "timed-out";
 }> {
-  const secretKey = new Uint8Array(decryptSecret(input.userWallet.mainKeypair));
+  const encryptedBalanceRow = await getUmbraEncryptedBalance(input.userWallet.userId, input.tokenMint);
+  const currentBalance = encryptedBalanceRow ? BigInt(encryptedBalanceRow.lastKnownAmount) : BigInt(0);
+  if (currentBalance < input.transferAmount) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Insufficient encrypted balance. Required: ${input.transferAmount.toString()}, Available: ${currentBalance.toString()}`,
+    });
+  }
+
+  console.log("createReceiverClaimableUtxo started");
+  const sk = input.userWallet.privateKey;
+  if (!sk) throw new Error("No private key available for Umbra operation");
+  const secretKey = new Uint8Array(decryptSecret(sk));
+  console.log("Secret key decrypted");
   const client = await getUmbraClientFromKeypair(secretKey);
+  console.log("Client created");
 
   const creator = getEncryptedBalanceToReceiverClaimableUtxoCreatorFunction(
     { client },
     { zkProver: getCreateReceiverClaimableUtxoFromEncryptedBalanceProver() }
   );
+  console.log("Creator function initialized");
 
-  const result = await creator({
-    receiverPublicKey: toSolanaAddress(input.receiverStealthPublicKey),
-    mint: toSolanaAddress(input.tokenMint),
-    amount: input.transferAmount,
-  } as any);
+  try {
+    const result = await creator({
+      destinationAddress: toSolanaAddress(input.receiverStealthPublicKey),
+      mint: toSolanaAddress(input.tokenMint),
+      amount: input.transferAmount,
+    } as any);
+    console.log("Creator result", result);
 
-  await upsertUmbraEncryptedBalance({
-    userId: input.userWallet.userId,
-    tokenMint: input.tokenMint,
-    amountDelta: `-${input.transferAmount.toString()}`,
-  });
+    await upsertUmbraEncryptedBalance({
+      userId: input.userWallet.userId,
+      tokenMint: input.tokenMint,
+      amountDelta: `-${input.transferAmount.toString()}`,
+    });
 
-  await insertUserTransaction({
-    userId: input.userWallet.userId,
-    type: "transfer",
-    status: "confirmed",
-    fromChain: "UMBRA",
-    toChain: "UMBRA",
-    fromToken: input.tokenMint,
-    toToken: input.tokenMint,
-    fromAmount: input.transferAmount.toString(),
-    toAmount: input.transferAmount.toString(),
-    toAddress: input.receiverStealthPublicKey,
-    confirmedAt: new Date(),
-  });
+    await insertUserTransaction({
+      userId: input.userWallet.userId,
+      type: "transfer",
+      status: "confirmed",
+      fromChain: "UMBRA",
+      toChain: "UMBRA",
+      fromToken: input.tokenMint,
+      toToken: input.tokenMint,
+      fromAmount: input.transferAmount.toString(),
+      toAmount: input.transferAmount.toString(),
+      toAddress: input.receiverStealthPublicKey,
+      confirmedAt: new Date(),
+    });
 
-  return {
-    queueSignature: String((result as any).transactionSignature || (result as any).signature || ""),
-    callbackSignature: undefined,
-    callbackStatus: undefined,
-  };
+    return {
+      queueSignature: String(result.queueSignature),
+      callbackSignature: result.callbackSignature ? String(result.callbackSignature) : undefined,
+      callbackStatus: result.callbackStatus,
+    };
+  } catch (error: any) {
+    console.error("Error in createReceiverClaimableUtxo:", error);
+    if (error.cause?.message?.includes("Receiver is not registered")) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "The recipient's address is not registered on Umbra.",
+      });
+    }
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Failed to create anonymous transfer UTXO.",
+      cause: error,
+    });
+  }
 }
 
 /**
@@ -211,7 +260,7 @@ export async function createReceiverClaimableUtxo(input: {
  * Increments `umbra_encrypted_balances` and removes the UTXO from `umbra_utxos`.
  */
 export async function claimUtxoToEncryptedBalance(input: {
-  userWallet: Pick<SolanaWallet, "userId" | "mainKeypair">;
+  userWallet: Pick<LinkedWallet, "userId" | "privateKey">;
   tokenMint: string;
   commitment: string;
   amount: bigint;
@@ -220,24 +269,60 @@ export async function claimUtxoToEncryptedBalance(input: {
   callbackSignature?: string;
   callbackStatus?: "finalized" | "pruned" | "timed-out";
 }> {
-  const secretKey = new Uint8Array(decryptSecret(input.userWallet.mainKeypair));
+  const sk = input.userWallet.privateKey;
+  if (!sk) throw new Error("No private key available for Umbra operation");
+  const secretKey = new Uint8Array(decryptSecret(sk));
   const client = await getUmbraClientFromKeypair(secretKey);
 
   const claimer = getReceiverClaimableUtxoToEncryptedBalanceClaimerFunction(
     { client },
-    { zkProver: getClaimReceiverClaimableUtxoIntoEncryptedBalanceProver() } as any
+    { 
+      zkProver: getClaimReceiverClaimableUtxoIntoEncryptedBalanceProver() as any,
+      fetchBatchMerkleProof: client.fetchMerkleProof as any,
+      relayer: getUmbraRelayer({ apiEndpoint: ENV.umbraRelayerEndpoint }) as any
+    }
   );
 
   // We need to pass the actual UTXO object to the claimer.
   // We'll rescan to get it.
   const scanner = getClaimableUtxoScannerFunction({ client });
   const scanResult = await scanner(0 as any, 0 as any, undefined);
-  const utxoToClaim = (scanResult.received ?? []).find(
-    (u: any) => bytesToHex(u.h1Hash) === input.commitment
+  const allUtxos = [
+    ...(scanResult.received ?? []),
+    ...(scanResult.publicReceived ?? []),
+    ...(scanResult.selfBurnable ?? []),
+    ...(scanResult.publicSelfBurnable ?? [])
+  ];
+  const utxoToClaim = allUtxos.find(
+    (u: any) => u.h1Hash && bytesToHex(u.h1Hash) === input.commitment
   );
   
   if (!utxoToClaim) {
     throw new Error("UTXO not found or not claimable by this user");
+  }
+
+  if (BigInt(utxoToClaim.amount) !== input.amount) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "UTXO amount mismatch.",
+    });
+  }
+
+  if (!utxoToClaim.h1Components) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "UTXO is missing H1 components for mint verification.",
+    });
+  }
+  const reconstructedMint = joinLowHighToAddress(
+    utxoToClaim.h1Components.mintAddressLow,
+    utxoToClaim.h1Components.mintAddressHigh
+  );
+  if (reconstructedMint !== input.tokenMint) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "UTXO token mint mismatch.",
+    });
   }
 
   const result = await claimer([utxoToClaim] as any);
@@ -276,16 +361,16 @@ export async function claimUtxoToEncryptedBalance(input: {
  * pair that the Umbra SDK ships inside H1 components. Inverse of the SDK's
  * `splitAddressToLowHigh`: bytes 0-15 = low (LE), bytes 16-31 = high (LE).
  */
-function joinLowHighToAddress(low: bigint, high: bigint): string {
+function joinLowHighToAddress(low: bigint | number | string, high: bigint | number | string): string {
   const MASK = BigInt(0xff);
   const SHIFT = BigInt(8);
   const bytes = new Uint8Array(32);
-  let v = low;
+  let v = BigInt(low);
   for (let i = 0; i < 16; i++) {
     bytes[i] = Number(v & MASK);
     v >>= SHIFT;
   }
-  v = high;
+  v = BigInt(high);
   for (let i = 0; i < 16; i++) {
     bytes[16 + i] = Number(v & MASK);
     v >>= SHIFT;
@@ -312,7 +397,7 @@ interface PersistedUtxo {
  * a ZK prover and is gated until that's wired up.
  */
 export async function scanIncomingUtxos(input: {
-  userWallet: Pick<SolanaWallet, "userId" | "mainKeypair">;
+  userWallet: Pick<LinkedWallet, "userId" | "privateKey" | "umbraScanIndex">;
   treeIndex?: number;
   startInsertionIndex?: number;
   endInsertionIndex?: number;
@@ -323,15 +408,29 @@ export async function scanIncomingUtxos(input: {
   publicSelfBurnable: PersistedUtxo[];
   nextScanStartIndex: number;
 }> {
-  const secretKey = new Uint8Array(decryptSecret(input.userWallet.mainKeypair));
+  const sk = input.userWallet.privateKey;
+  if (!sk) throw new Error("No private key available for Umbra operation");
+  const secretKey = new Uint8Array(decryptSecret(sk));
   const client = await getUmbraClientFromKeypair(secretKey);
   const scanner = getClaimableUtxoScannerFunction({ client });
 
-  const treeIndex = (input.treeIndex ?? 0) as unknown as never;
-  const startIndex = (input.startInsertionIndex ?? 0) as unknown as never;
-  const endIndex = input.endInsertionIndex as unknown as never | undefined;
+  const treeIndex = BigInt(input.treeIndex ?? 0) as unknown as never;
+  const startIndex = BigInt(input.startInsertionIndex ?? input.userWallet.umbraScanIndex ?? 0) as unknown as never;
+  const endIndex = input.endInsertionIndex !== undefined ? BigInt(input.endInsertionIndex) as unknown as never : undefined;
 
-  const result = await scanner(treeIndex, startIndex, endIndex);
+  let result: any = {};
+  try {
+    result = await scanner(treeIndex, startIndex, endIndex);
+  } catch (err: any) {
+    console.warn("Umbra indexer scan failed, returning empty results. Error:", err?.message || err);
+    result = {
+      received: [],
+      selfBurnable: [],
+      publicReceived: [],
+      publicSelfBurnable: [],
+      nextScanStartIndex: startIndex,
+    };
+  }
 
   const toPersisted = (
     utxo: {
@@ -372,12 +471,17 @@ export async function scanIncomingUtxos(input: {
     });
   }
 
+  const nextScanStartIndex = Number(result.nextScanStartIndex ?? startIndex);
+  if (nextScanStartIndex > (input.userWallet.umbraScanIndex ?? 0)) {
+    await updateUmbraScanIndex(input.userWallet.userId, nextScanStartIndex);
+  }
+
   return {
     received,
     selfBurnable,
     publicReceived,
     publicSelfBurnable,
-    nextScanStartIndex: Number(result.nextScanStartIndex ?? 0),
+    nextScanStartIndex,
   };
 }
 
@@ -387,3 +491,40 @@ export const UMBRA_SUPPORTED_TOKENS = {
   wSOL: "So11111111111111111111111111111111111111112",
   UMBRA: "PRVT6TB7uss3FrUd2D9xs2zqDBsa3GbMJMwCQsgmeta",
 };
+
+export async function registerWalletOnUmbra(wallet: Pick<LinkedWallet, "userId" | "address" | "privateKey">): Promise<void> {
+  const sk = wallet.privateKey;
+  if (!sk) throw new Error("No private key available for Umbra operation");
+  const secretKey = new Uint8Array(decryptSecret(sk));
+
+  const network = resolveNetwork();
+  
+  if (network !== "mainnet") {
+    try {
+      const { Connection, PublicKey } = await import("@solana/web3.js");
+      const connection = new Connection(ENV.solanaRpcUrl, "confirmed");
+      const pubkey = new PublicKey(wallet.address);
+      const balance = await connection.getBalance(pubkey);
+      if (balance < 500_000_000) {
+        console.log(`[Umbra registration] Balance low (${balance} lamports), requesting airdrop for ${wallet.address}`);
+        const signature = await connection.requestAirdrop(pubkey, 1_000_000_000);
+        const latestBlockHash = await connection.getLatestBlockhash();
+        await connection.confirmTransaction({
+          blockhash: latestBlockHash.blockhash,
+          lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
+          signature
+        }, "confirmed");
+        console.log(`[Umbra registration] Airdrop successful`);
+      }
+    } catch (err) {
+      console.warn("[Umbra registration] Airdrop failed:", err);
+    }
+  }
+
+  const client = await getUmbraClientFromKeypair(secretKey);
+  const register = getUserRegistrationFunction({ client });
+  await register({
+    destinationAddress: wallet.address,
+  } as any);
+  console.log(`[Umbra registration] Wallet ${wallet.address} registered successfully`);
+}

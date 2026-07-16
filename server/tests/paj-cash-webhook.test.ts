@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   updateFiatRequestStatus: vi.fn(async () => {}),
   insertUserTransaction: vi.fn(async () => ({})),
   getUserWallets: vi.fn(async () => []),
+  getUserWalletByChain: vi.fn(),
   shieldPublicBalance: vi.fn(async () => ({ queueSignature: "shield-sig" })),
 }));
 
@@ -19,6 +20,7 @@ vi.mock("../db", () => ({
   updateFiatRequestStatus: mocks.updateFiatRequestStatus,
   insertUserTransaction: mocks.insertUserTransaction,
   getUserWallets: mocks.getUserWallets,
+  getUserWalletByChain: mocks.getUserWalletByChain,
 }));
 
 vi.mock("../services/umbra", () => ({
@@ -54,6 +56,7 @@ beforeEach(() => {
   mocks.insertUserTransaction.mockImplementation(async () => ({}));
   mocks.shieldPublicBalance.mockImplementation(async () => ({ queueSignature: "shield-sig" }));
   mocks.getUserWallets.mockImplementation(async () => []);
+  mocks.getUserWalletByChain.mockImplementation(async () => undefined);
 });
 
 describe("paj-cash webhook", () => {
@@ -91,9 +94,9 @@ describe("paj-cash webhook", () => {
 
   it("on COMPLETED ON_RAMP: updates status, shields, and inserts user_transaction", async () => {
     mocks.getFiatRequestByReference.mockResolvedValueOnce(SAMPLE_REQUEST);
-    mocks.getUserWallets.mockResolvedValueOnce([
-      { id: 7, userId: 42, mainAddress: "Sol111", mainKeypair: "iv:c:t", stealthKey: "iv:c:t", claimKey: "iv:c:t", balance: "0", lastBalanceUpdate: new Date(), createdAt: new Date(), updatedAt: new Date() },
-    ]);
+    mocks.getUserWalletByChain.mockResolvedValueOnce(
+      { id: 7, userId: 42, address: "Sol111", privateKey: "iv:c:t", stealthKey: "iv:c:t", claimKey: "iv:c:t", balance: "0", lastBalanceUpdate: new Date(), createdAt: new Date(), updatedAt: new Date() },
+    );
 
     const res = await request(buildApp())
       .post("/api/webhooks/paj-cash")
@@ -102,9 +105,9 @@ describe("paj-cash webhook", () => {
     expect(res.status).toBe(200);
     expect(mocks.updateFiatRequestStatus).toHaveBeenCalledWith("ref-1", "confirmed", expect.any(Date));
     expect(mocks.shieldPublicBalance).toHaveBeenCalledWith({
-      userWallet: expect.objectContaining({ userId: 42, mainAddress: "Sol111" }),
+      userWallet: expect.objectContaining({ userId: 42, address: "Sol111" }),
       tokenMint: "USDC-mint",
-      transferAmount: 99n,
+      transferAmount: 99000000n,
     });
     expect(mocks.insertUserTransaction).toHaveBeenCalledTimes(1);
     const inserted = mocks.insertUserTransaction.mock.calls[0][0];

@@ -3,34 +3,54 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
 import { Loader2, Send, Download, RefreshCcw } from "lucide-react";
 import { formatUnits, parseUnits } from "ethers";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+
+const sendSchema = z.object({
+  recipientStealthKey: z.string().min(32, "Invalid stealth public key length"),
+  amount: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
+    message: "Amount must be a positive number",
+  }),
+});
+
+type SendFormValues = z.infer<typeof sendSchema>;
 
 export default function AnonymousTransfer() {
   const { toast } = useToast();
   
-  const [sendAmount, setSendAmount] = useState("");
-  const [recipientStealthKey, setRecipientStealthKey] = useState("");
   // Default to USDC on Solana for MVP
-  const [tokenMint, setTokenMint] = useState("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+  const tokenMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+
+  const form = useForm<SendFormValues>({
+    resolver: zodResolver(sendSchema),
+    defaultValues: {
+      recipientStealthKey: "",
+      amount: "",
+    },
+  });
 
   const { data: claimableUtxos, isLoading: isLoadingUtxos, refetch: refetchUtxos } = trpc.umbra.listClaimable.useQuery();
   const scanMutation = trpc.umbra.scanIncoming.useMutation({
     onSuccess: () => {
       toast({ title: "Scan Complete", description: "Checked for new stealth transfers." });
       refetchUtxos();
+    },
+    onError: (error) => {
+      toast({ title: "Scan Failed", description: error.message, variant: "destructive" });
     }
   });
 
   const sendMutation = trpc.umbra.send.useMutation({
     onSuccess: () => {
       toast({ title: "Transfer Sent", description: "Anonymous transfer initiated." });
-      setSendAmount("");
-      setRecipientStealthKey("");
+      form.reset();
     },
     onError: (error) => toast({ title: "Transfer Failed", description: error.message, variant: "destructive" })
   });
@@ -43,14 +63,13 @@ export default function AnonymousTransfer() {
     onError: (error) => toast({ title: "Claim Failed", description: error.message, variant: "destructive" })
   });
 
-  const handleSend = () => {
-    if (!sendAmount || !recipientStealthKey) return;
+  const onSubmit = (values: SendFormValues) => {
     try {
-      const amountBaseUnits = parseUnits(sendAmount, 6).toString(); // Assuming 6 decimals for USDC
+      const amountBaseUnits = parseUnits(values.amount, 6).toString(); // Assuming 6 decimals for USDC
       sendMutation.mutate({
         tokenMint,
         amountBaseUnits,
-        receiverStealthPublicKey: recipientStealthKey,
+        receiverStealthPublicKey: values.recipientStealthKey,
       });
     } catch {
       toast({ title: "Invalid Amount", variant: "destructive" });
@@ -89,35 +108,48 @@ export default function AnonymousTransfer() {
                   Send funds to another user's stealth address. The transfer cannot be traced back to you.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Recipient Stealth Public Key</Label>
-                  <Input 
-                    placeholder="Enter recipient's stealth public key" 
-                    value={recipientStealthKey}
-                    onChange={(e) => setRecipientStealthKey(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Amount (USDC)</Label>
-                  <Input 
-                    type="number" 
-                    placeholder="0.00" 
-                    value={sendAmount}
-                    onChange={(e) => setSendAmount(e.target.value)}
-                  />
-                </div>
-              </CardContent>
-              <CardFooter>
-                <Button 
-                  className="w-full" 
-                  disabled={!sendAmount || !recipientStealthKey || sendMutation.isPending}
-                  onClick={handleSend}
-                >
-                  {sendMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                  Send Anonymously
-                </Button>
-              </CardFooter>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)}>
+                  <CardContent className="space-y-4">
+                    <FormField
+                      control={form.control}
+                      name="recipientStealthKey"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Recipient Stealth Public Key</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Enter recipient's stealth public key" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="amount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Amount (USDC)</FormLabel>
+                          <FormControl>
+                            <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </CardContent>
+                  <CardFooter>
+                    <Button 
+                      type="submit"
+                      className="w-full" 
+                      disabled={sendMutation.isPending}
+                    >
+                      {sendMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                      Send Anonymously
+                    </Button>
+                  </CardFooter>
+                </form>
+              </Form>
             </Card>
           </TabsContent>
           
@@ -146,7 +178,7 @@ export default function AnonymousTransfer() {
                       <div key={utxo.commitment} className="flex items-center justify-between p-4 border rounded-lg bg-card">
                         <div>
                           <p className="font-medium">{formatUnits(BigInt(utxo.amount), 6)} USDC</p>
-                          <p className="text-xs text-muted-foreground">Type: {utxo.type}</p>
+                          <p className="text-xs text-muted-foreground">Type: {utxo.type.replace('_', ' ')}</p>
                           <p className="text-xs text-muted-foreground truncate w-48" title={utxo.commitment}>
                             ID: {utxo.commitment.substring(0, 16)}...
                           </p>
@@ -156,7 +188,7 @@ export default function AnonymousTransfer() {
                           onClick={() => handleClaim(utxo.commitment, utxo.amount)}
                           disabled={claimMutation.isPending}
                         >
-                          <Download className="mr-2 h-4 w-4" />
+                          {claimMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                           Claim
                         </Button>
                       </div>

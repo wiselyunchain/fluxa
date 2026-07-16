@@ -16,11 +16,11 @@
   - Wire `umbra.listClaimable` and `umbra.withdraw`.
   - Integrate `umbra.send` and `umbra.claim` for full anonymous transfers.
 
-- [ ] **Task 4: Build Umbra-in / Umbra-out Swap Variant**
+- [x] **Task 4: Build Umbra-in / Umbra-out Swap Variant**
   - Add backend logic for privacy-preserving routing (withdraw from encrypted balance → swap → shield output).
   - Add UI support for private swaps in `Swap.tsx`.
 
-- [ ] **Task 5: Build Admin Sub-Pages**
+- [x] **Task 5: Build Admin Sub-Pages**
   - `UserManagement`
   - `TransactionMonitoring`
   - `ComplianceLogging`

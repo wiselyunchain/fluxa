@@ -34,8 +34,8 @@ vi.mock("../services/paj-cash", () => ({
 import { FlowService } from "../services/flows";
 
 const WALLET = {
-  mainAddress: "SoLanaUser111",
-  mainKeypair: "iv:cipher:tag",
+  address: "SoLanaUser111",
+  privateKey: "iv:cipher:tag",
 };
 
 const SAMPLE_QUOTE = {
@@ -74,6 +74,8 @@ describe("FlowService.handleSwap", () => {
       originAsset: "nep141:sol-usdc.omft.near",
       destinationAsset: "nep141:arb-usdc.omft.near",
       amountBaseUnits: "1000000",
+      originChain: "solana",
+      destinationChain: "evm",
     });
 
     const client = mocks.getNearIntentClient.mock.results[0].value;
@@ -87,8 +89,8 @@ describe("FlowService.handleSwap", () => {
       amount: "1000000",
       depositType: "ORIGIN_CHAIN",
       recipientType: "DESTINATION_CHAIN",
-      recipient: WALLET.mainAddress,
-      refundTo: WALLET.mainAddress,
+      recipient: WALLET.address,
+      refundTo: WALLET.address,
     });
     expect(typeof quoteCall.deadline).toBe("string");
 
@@ -147,6 +149,7 @@ describe("FlowService.handleSwap", () => {
       recipient: "0xCustom",
       slippageBps: 250,
       deadlineSeconds: 120,
+      originChain: "solana",
     });
 
     const sent = quoteFn.mock.calls[0][0];
@@ -173,6 +176,7 @@ describe("FlowService.handleSwap", () => {
       originAsset: "o",
       destinationAsset: "d",
       amountBaseUnits: "100",
+      originChain: "solana",
     });
 
     expect(result.transferSignature).toBe("FAKE_SIG");
@@ -196,6 +200,7 @@ describe("FlowService.handleSwap", () => {
         originAsset: "o",
         destinationAsset: "d",
         amountBaseUnits: "100",
+        originChain: "solana",
       }),
     ).rejects.toThrow("quote rejected");
 
@@ -218,6 +223,7 @@ describe("FlowService.handleSwap", () => {
         originAsset: "o",
         destinationAsset: "d",
         amountBaseUnits: "100",
+        originChain: "solana",
       }),
     ).rejects.toThrow("insufficient funds");
 

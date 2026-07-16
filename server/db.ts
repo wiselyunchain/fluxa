@@ -1,17 +1,17 @@
-import { eq, and, desc, gt, isNotNull } from "drizzle-orm";
+import { eq, and, desc, gt, lt, isNotNull } from "drizzle-orm";
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import {
   InsertUser,
   users,
-  solanaWallets,
+  linkedWallets,
   userTransactions,
   fiatRequests,
   riskFlags,
   pajCashSessions,
   umbraEncryptedBalances,
   umbraUtxos,
-  SolanaWallet,
+  LinkedWallet,
   UserTransaction,
   FiatRequest,
   RiskFlag,
@@ -22,6 +22,10 @@ import {
   InsertUserTransaction,
   InsertPajCashSession,
   InsertUmbraUtxo,
+  InsertLinkedWallet,
+  solanaStealthAddresses,
+  SolanaStealthAddress,
+  InsertSolanaStealthAddress,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -120,19 +124,132 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-export async function getUserWallets(userId: number): Promise<SolanaWallet[]> {
+export async function getUserWallets(userId: number, chain?: LinkedWallet["chain"]): Promise<LinkedWallet[]> {
   const db = await getDb();
   if (!db) return [];
 
-  return db.select().from(solanaWallets).where(eq(solanaWallets.userId, userId));
+  const filters = [eq(linkedWallets.userId, userId)];
+  if (chain) filters.push(eq(linkedWallets.chain, chain));
+  return db.select().from(linkedWallets).where(and(...filters)).orderBy(linkedWallets.isDefault);
 }
 
-export async function getWalletByAddress(address: string): Promise<SolanaWallet | undefined> {
+export async function getAllUserWallets(userId: number): Promise<Record<string, LinkedWallet | null>> {
+  const all = await getUserWallets(userId);
+  const result: Record<string, LinkedWallet | null> = {
+    solana: null, evm: null, ton: null, near: null, bitcoin: null,
+  };
+  for (const w of all) {
+    if (w.isDefault && result[w.chain] === null) {
+      result[w.chain] = w;
+    }
+  }
+  return result;
+}
+
+export async function getUserDefaultSolanaWallet(userId: number): Promise<LinkedWallet | undefined> {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.select().from(solanaWallets).where(eq(solanaWallets.mainAddress, address)).limit(1);
+  const result = await db
+    .select()
+    .from(linkedWallets)
+    .where(and(
+      eq(linkedWallets.userId, userId),
+      eq(linkedWallets.chain, "solana"),
+      eq(linkedWallets.isDefault, true),
+    ))
+    .limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserWalletByChain(userId: number, chain: LinkedWallet["chain"]): Promise<LinkedWallet | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(linkedWallets)
+    .where(and(
+      eq(linkedWallets.userId, userId),
+      eq(linkedWallets.chain, chain),
+      eq(linkedWallets.isDefault, true),
+    ))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getWalletByAddress(address: string): Promise<LinkedWallet | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(linkedWallets).where(eq(linkedWallets.address, address)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function insertLinkedWallet(input: InsertLinkedWallet): Promise<LinkedWallet> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const inserted = await db.insert(linkedWallets).values(input).returning();
+  return inserted[0];
+}
+
+export async function linkExternalWallet(input: {
+  userId: number;
+  chain: LinkedWallet["chain"];
+  address: string;
+}): Promise<LinkedWallet> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const existing = await db
+    .select()
+    .from(linkedWallets)
+    .where(and(
+      eq(linkedWallets.userId, input.userId),
+      eq(linkedWallets.chain, input.chain),
+      eq(linkedWallets.address, input.address),
+    ))
+    .limit(1);
+
+  if (existing.length > 0) return existing[0];
+
+  const hasDefault = await db
+    .select()
+    .from(linkedWallets)
+    .where(and(
+      eq(linkedWallets.userId, input.userId),
+      eq(linkedWallets.chain, input.chain),
+      eq(linkedWallets.isDefault, true),
+    ))
+    .limit(1);
+
+  const inserted = await db.insert(linkedWallets).values({
+    userId: input.userId,
+    chain: input.chain,
+    address: input.address,
+    isExternal: true,
+    isDefault: hasDefault.length === 0,
+    privateKey: null,
+    balance: "0",
+  }).returning();
+
+  return inserted[0];
+}
+
+export async function updateUmbraScanIndex(userId: number, nextScanIndex: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  await db
+    .update(linkedWallets)
+    .set({ umbraScanIndex: nextScanIndex })
+    .where(and(
+      eq(linkedWallets.userId, userId),
+      eq(linkedWallets.chain, "solana"),
+      eq(linkedWallets.isDefault, true),
+      lt(linkedWallets.umbraScanIndex, nextScanIndex),
+    ));
 }
 
 export async function getUserTransactions(
@@ -240,8 +357,12 @@ export async function upsertUmbraEncryptedBalance(input: {
     )
     .limit(1);
 
+  const delta = BigInt(input.amountDelta);
   const now = new Date();
   if (existing.length === 0) {
+    if (delta < BigInt(0)) {
+      throw new Error("Resulting balance cannot be negative");
+    }
     await db.insert(umbraEncryptedBalances).values({
       userId: input.userId,
       tokenMint: input.tokenMint,
@@ -251,8 +372,12 @@ export async function upsertUmbraEncryptedBalance(input: {
     return;
   }
 
-  const prev = Number(existing[0].lastKnownAmount ?? "0");
-  const next = (prev + Number(input.amountDelta)).toString();
+  const prev = BigInt(existing[0].lastKnownAmount ?? "0");
+  const nextVal = prev + delta;
+  if (nextVal < BigInt(0)) {
+    throw new Error("Resulting balance cannot be negative");
+  }
+  const next = nextVal.toString();
   await db
     .update(umbraEncryptedBalances)
     .set({ lastKnownAmount: next, lastShieldedAt: now, updatedAt: now })
@@ -408,3 +533,37 @@ export async function deleteUmbraUtxo(userId: number, commitment: string): Promi
       )
     );
 }
+
+// ---------- Solana Stealth Addresses (for ephemeral swap outputs) ----------
+
+export async function insertSolanaStealthAddress(input: InsertSolanaStealthAddress): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  await db.insert(solanaStealthAddresses).values(input);
+}
+
+export async function getSolanaStealthAddressByTransaction(
+  transactionId: number,
+): Promise<SolanaStealthAddress | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(solanaStealthAddresses)
+    .where(eq(solanaStealthAddresses.transactionId, transactionId))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function markSolanaStealthAddressClaimed(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  await db
+    .update(solanaStealthAddresses)
+    .set({ claimed: true, claimedAt: new Date() })
+    .where(eq(solanaStealthAddresses.id, id));
+}
+
