@@ -8,6 +8,7 @@ export const flowRouter = router({
     .input(
       z.object({
         nairaAmount: z.number().positive(),
+        mint: z.string().min(32).max(44).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -18,6 +19,7 @@ export const flowRouter = router({
         userId: ctx.user.id,
         nairaAmount: input.nairaAmount,
         userWallet: wallet,
+        mint: input.mint,
       });
     }),
 
@@ -27,6 +29,7 @@ export const flowRouter = router({
         usdtAmount: z.number().positive(),
         bankId: z.string(),
         accountNumber: z.string(),
+        mint: z.string().min(32).max(44).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -39,6 +42,7 @@ export const flowRouter = router({
         bankId: input.bankId,
         accountNumber: input.accountNumber,
         userWallet: wallet,
+        mint: input.mint,
       });
     }),
 

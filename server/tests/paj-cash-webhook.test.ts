@@ -28,6 +28,7 @@ vi.mock("../services/umbra", () => ({
 }));
 
 import { registerPajCashWebhook } from "../routes/paj-cash-webhook";
+import { ENV } from "../_core/env";
 
 function buildApp() {
   const app = express();
@@ -35,6 +36,9 @@ function buildApp() {
   registerPajCashWebhook(app);
   return app;
 }
+
+const ACCEPTED_USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const ACCEPTED_USDT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
 
 const SAMPLE_REQUEST = {
   id: 1,
@@ -100,13 +104,13 @@ describe("paj-cash webhook", () => {
 
     const res = await request(buildApp())
       .post("/api/webhooks/paj-cash")
-      .send({ id: "ref-1", status: "COMPLETED", transactionType: "ON_RAMP", amount: 99, mint: "USDC-mint" });
+      .send({ id: "ref-1", status: "COMPLETED", transactionType: "ON_RAMP", amount: 99, mint: ACCEPTED_USDT });
 
     expect(res.status).toBe(200);
     expect(mocks.updateFiatRequestStatus).toHaveBeenCalledWith("ref-1", "confirmed", expect.any(Date));
     expect(mocks.shieldPublicBalance).toHaveBeenCalledWith({
       userWallet: expect.objectContaining({ userId: 42, address: "Sol111" }),
-      tokenMint: "USDC-mint",
+      tokenMint: ACCEPTED_USDT,
       transferAmount: 99000000n,
     });
     expect(mocks.insertUserTransaction).toHaveBeenCalledTimes(1);
@@ -114,18 +118,20 @@ describe("paj-cash webhook", () => {
     expect(inserted.type).toBe("deposit");
     expect(inserted.status).toBe("confirmed");
     expect(inserted.pajCashReference).toBe("ref-1");
+    expect(inserted.toToken).toBe(ACCEPTED_USDT);
   });
 
   it("on COMPLETED OFF_RAMP: inserts a withdrawal user_transaction (no shielding)", async () => {
     mocks.getFiatRequestByReference.mockResolvedValueOnce({ ...SAMPLE_REQUEST, type: "withdrawal" });
     const res = await request(buildApp())
       .post("/api/webhooks/paj-cash")
-      .send({ id: "ref-1", status: "COMPLETED", transactionType: "OFF_RAMP", amount: 50, mint: "USDC-mint" });
+      .send({ id: "ref-1", status: "COMPLETED", transactionType: "OFF_RAMP", amount: 50, mint: ACCEPTED_USDT });
     expect(res.status).toBe(200);
     expect(mocks.shieldPublicBalance).not.toHaveBeenCalled();
     const inserted = mocks.insertUserTransaction.mock.calls[0][0];
     expect(inserted.type).toBe("withdrawal");
     expect(inserted.status).toBe("confirmed");
+    expect(inserted.fromToken).toBe(ACCEPTED_USDT);
   });
 
   it("on FAILED: marks fiat_request failed and inserts a failed user_transaction", async () => {
@@ -138,6 +144,47 @@ describe("paj-cash webhook", () => {
     expect(mocks.insertUserTransaction).toHaveBeenCalledTimes(1);
     const inserted = mocks.insertUserTransaction.mock.calls[0][0];
     expect(inserted.status).toBe("failed");
+  });
+
+  it("on COMPLETED ON_RAMP: falls back to default USDC mint when unknown mint is provided", async () => {
+    mocks.getFiatRequestByReference.mockResolvedValueOnce(SAMPLE_REQUEST);
+    mocks.getUserWalletByChain.mockResolvedValueOnce(
+      { id: 7, userId: 42, address: "Sol111", privateKey: "iv:c:t", stealthKey: "iv:c:t", claimKey: "iv:c:t", balance: "0", lastBalanceUpdate: new Date(), createdAt: new Date(), updatedAt: new Date() },
+    );
+    const res = await request(buildApp())
+      .post("/api/webhooks/paj-cash")
+      .send({ id: "ref-1", status: "COMPLETED", transactionType: "ON_RAMP", amount: 50, mint: "0xUnknownMintToken" });
+    expect(res.status).toBe(200);
+    expect(mocks.shieldPublicBalance).toHaveBeenCalledWith(
+      expect.objectContaining({ tokenMint: ACCEPTED_USDC }),
+    );
+    const inserted = mocks.insertUserTransaction.mock.calls[0][0];
+    expect(inserted.toToken).toBe(ACCEPTED_USDC);
+  });
+
+  it("returns 401 when signature header is missing and secret is configured", async () => {
+    const prev = ENV.pajCashWebhookSecret;
+    ENV.pajCashWebhookSecret = "test-secret";
+    const app = buildApp();
+    const res = await request(app)
+      .post("/api/webhooks/paj-cash")
+      .send({ id: "ref-1", status: "COMPLETED", transactionType: "ON_RAMP" });
+    ENV.pajCashWebhookSecret = prev;
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe("unauthorized");
+  });
+
+  it("returns 401 when signature header does not match", async () => {
+    const prev = ENV.pajCashWebhookSecret;
+    ENV.pajCashWebhookSecret = "test-secret";
+    const app = buildApp();
+    const res = await request(app)
+      .post("/api/webhooks/paj-cash")
+      .set("x-pajcash-signature", "invalid-signature")
+      .send({ id: "ref-1", status: "COMPLETED", transactionType: "ON_RAMP" });
+    ENV.pajCashWebhookSecret = prev;
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe("unauthorized");
   });
 
   it("returns 200 even when DB throws (idempotent webhook contract)", async () => {

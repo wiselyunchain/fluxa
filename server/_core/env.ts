@@ -20,6 +20,7 @@ export const ENV = {
   pajCashWebhookUrl: process.env.PAJ_CASH_WEBHOOK_URL ?? "",
   pajCashWebhookSecret: process.env.PAJ_CASH_WEBHOOK_SECRET ?? "",
   pajCashUsdcMint: process.env.PAJ_CASH_USDC_MINT ?? "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  pajCashAcceptedMints: (process.env.PAJ_CASH_ACCEPTED_MINTS ?? "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v,Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB").split(","),
   // App
   appBaseUrl: process.env.APP_BASE_URL ?? "http://localhost:3000",
   nearIntentApiUrl: process.env.NEAR_INTENT_API_URL ?? "https://1click.chaindefuser.com/v0",

@@ -4,23 +4,28 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Loader2, Download, ShieldCheck } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useToast } from "@/components/ui/use-toast";
+
+const SETTLEMENT_TOKENS = [
+  { label: "USDC", mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" },
+  { label: "USDT", mint: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" },
+] as const;
 
 export default function Deposit() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [amount, setAmount] = useState("");
-  
+  const [tokenMint, setTokenMint] = useState(SETTLEMENT_TOKENS[0].mint);
+
   const depositMutation = trpc.flow.deposit.useMutation({
     onSuccess: (data) => {
       toast({
         title: "Deposit Initiated",
         description: "Please transfer NGN to the provided account details.",
       });
-      // In a real app, this would show the bank account details returned by Paj Cash
-      // For now, we redirect to dashboard
       setTimeout(() => navigate('/dashboard'), 2000);
     },
     onError: (error) => {
@@ -35,8 +40,8 @@ export default function Deposit() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!amount || isNaN(Number(amount))) return;
-    
-    depositMutation.mutate({ nairaAmount: Number(amount) });
+
+    depositMutation.mutate({ nairaAmount: Number(amount), mint: tokenMint });
   };
 
   return (
@@ -46,7 +51,7 @@ export default function Deposit() {
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Dashboard
         </Button>
-        
+
         <Card className="border-border shadow-md">
           <CardHeader>
             <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
@@ -54,19 +59,35 @@ export default function Deposit() {
             </div>
             <CardTitle className="text-2xl">Deposit NGN</CardTitle>
             <CardDescription>
-              Convert Nigerian Naira to private SOL seamlessly via Paj Cash.
+              Convert Nigerian Naira to private crypto via Paj Cash.
             </CardDescription>
           </CardHeader>
-          
+
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="token">Settlement Token</Label>
+                <Select value={tokenMint} onValueChange={setTokenMint}>
+                  <SelectTrigger id="token">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SETTLEMENT_TOKENS.map((t) => (
+                      <SelectItem key={t.mint} value={t.mint}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="amount">Amount (NGN)</Label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-medium">₦</span>
-                  <Input 
-                    id="amount" 
-                    placeholder="100,000" 
+                  <Input
+                    id="amount"
+                    placeholder="100,000"
                     className="pl-8 text-lg"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
@@ -83,11 +104,11 @@ export default function Deposit() {
                 </div>
               </div>
             </CardContent>
-            
+
             <CardFooter>
-              <Button 
-                type="submit" 
-                className="w-full h-12 text-lg" 
+              <Button
+                type="submit"
+                className="w-full h-12 text-lg"
                 disabled={!amount || depositMutation.isPending}
               >
                 {depositMutation.isPending ? (

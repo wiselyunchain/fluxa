@@ -78,9 +78,17 @@ export async function getPlatformSessionToken(): Promise<string> {
 
 // ---------- Order creation ----------
 
+const ACCEPTED_MINTS = ENV.pajCashAcceptedMints.map((m) => m.trim()).filter(Boolean);
+
+function resolveMint(inputMint?: string): string {
+  if (inputMint && ACCEPTED_MINTS.includes(inputMint)) return inputMint;
+  return ENV.pajCashUsdcMint;
+}
+
 export async function createDepositOrder(input: {
   nairaAmount: number;
   recipientAddress: string;
+  mint?: string;
 }): Promise<OnrampOrder> {
   ensureSDKInitialized();
   const token = await getPlatformSessionToken();
@@ -88,7 +96,7 @@ export async function createDepositOrder(input: {
     fiatAmount: input.nairaAmount,
     currency: Currency.NGN,
     recipient: input.recipientAddress,
-    mint: ENV.pajCashUsdcMint,
+    mint: resolveMint(input.mint),
     chain: Chain.SOLANA,
     webhookURL: ENV.pajCashWebhookUrl,
   };
@@ -99,6 +107,7 @@ export async function createWithdrawalOrder(input: {
   usdtAmount: number;
   bankId: string;
   accountNumber: string;
+  mint?: string;
 }): Promise<OfframpOrder> {
   ensureSDKInitialized();
   const token = await getPlatformSessionToken();
@@ -107,7 +116,7 @@ export async function createWithdrawalOrder(input: {
     accountNumber: input.accountNumber,
     currency: Currency.NGN,
     amount: input.usdtAmount,
-    mint: ENV.pajCashUsdcMint,
+    mint: resolveMint(input.mint),
     chain: Chain.SOLANA,
     webhookURL: ENV.pajCashWebhookUrl,
   };

@@ -4,24 +4,28 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Loader2, Upload, ShieldAlert } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useToast } from "@/components/ui/use-toast";
 
+const SETTLEMENT_TOKENS = [
+  { label: "USDC", mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" },
+  { label: "USDT", mint: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" },
+] as const;
+
 export default function Withdraw() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  
-  // bankId is a placeholder until paj_ramp.getBanks() is exposed via tRPC
-  // and rendered as a selector. "044" is Access Bank's legacy code; replace
-  // with a real Paj bankId once the picker lands.
+
   const [formData, setFormData] = useState({
     amount: "",
     accountName: "",
     accountNumber: "",
     bankId: "044"
   });
-  
+  const [tokenMint, setTokenMint] = useState(SETTLEMENT_TOKENS[0].mint);
+
   const withdrawMutation = trpc.flow.withdraw.useMutation({
     onSuccess: (data) => {
       toast({
@@ -47,11 +51,12 @@ export default function Withdraw() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.amount || isNaN(Number(formData.amount))) return;
-    
+
     withdrawMutation.mutate({
       usdtAmount: Number(formData.amount),
       bankId: formData.bankId,
       accountNumber: formData.accountNumber,
+      mint: tokenMint,
     });
   };
 
@@ -62,7 +67,7 @@ export default function Withdraw() {
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Dashboard
         </Button>
-        
+
         <Card className="border-border shadow-md">
           <CardHeader>
             <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
@@ -70,19 +75,38 @@ export default function Withdraw() {
             </div>
             <CardTitle className="text-2xl">Withdraw to Bank</CardTitle>
             <CardDescription>
-              Convert private SOL/USDT to Nigerian Naira via Paj Cash.
+              Convert private crypto to Nigerian Naira via Paj Cash.
             </CardDescription>
           </CardHeader>
-          
+
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="amount">Amount (SOL/USDT)</Label>
+                <Label htmlFor="token">Settlement Token</Label>
+                <Select value={tokenMint} onValueChange={setTokenMint}>
+                  <SelectTrigger id="token">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SETTLEMENT_TOKENS.map((t) => (
+                      <SelectItem key={t.mint} value={t.mint}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="amount">Amount</Label>
                 <div className="relative">
-                  <Input 
-                    id="amount" 
-                    placeholder="100" 
-                    className="text-lg"
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-medium text-sm">
+                    {SETTLEMENT_TOKENS.find(t => t.mint === tokenMint)?.label ?? "USDC"}
+                  </span>
+                  <Input
+                    id="amount"
+                    placeholder="100"
+                    className="pl-14 text-lg"
                     value={formData.amount}
                     onChange={handleChange}
                     disabled={withdrawMutation.isPending}
@@ -92,9 +116,9 @@ export default function Withdraw() {
 
               <div className="space-y-2">
                 <Label htmlFor="accountName">Account Name</Label>
-                <Input 
-                  id="accountName" 
-                  placeholder="John Doe" 
+                <Input
+                  id="accountName"
+                  placeholder="John Doe"
                   value={formData.accountName}
                   onChange={handleChange}
                   disabled={withdrawMutation.isPending}
@@ -103,9 +127,9 @@ export default function Withdraw() {
 
               <div className="space-y-2">
                 <Label htmlFor="accountNumber">Account Number</Label>
-                <Input 
-                  id="accountNumber" 
-                  placeholder="0123456789" 
+                <Input
+                  id="accountNumber"
+                  placeholder="0123456789"
                   value={formData.accountNumber}
                   onChange={handleChange}
                   disabled={withdrawMutation.isPending}
@@ -120,11 +144,11 @@ export default function Withdraw() {
                 </div>
               </div>
             </CardContent>
-            
+
             <CardFooter>
-              <Button 
-                type="submit" 
-                className="w-full h-12 text-lg" 
+              <Button
+                type="submit"
+                className="w-full h-12 text-lg"
                 disabled={!formData.amount || !formData.accountName || !formData.accountNumber || withdrawMutation.isPending}
               >
                 {withdrawMutation.isPending ? (

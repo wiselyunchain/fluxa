@@ -17,10 +17,12 @@ export class FlowService {
     userId: number;
     nairaAmount: number;
     userWallet: Pick<LinkedWallet, "address">;
+    mint?: string;
   }) {
     const order = await createDepositOrder({
       nairaAmount: input.nairaAmount,
       recipientAddress: input.userWallet.address,
+      mint: input.mint,
     });
 
     await insertFiatRequest({
@@ -57,11 +59,13 @@ export class FlowService {
     bankId: string;
     accountNumber: string;
     userWallet: Pick<LinkedWallet, "address" | "privateKey">;
+    mint?: string;
   }) {
     const order = await createWithdrawalOrder({
       usdtAmount: input.usdtAmount,
       bankId: input.bankId,
       accountNumber: input.accountNumber,
+      mint: input.mint,
     });
 
     await insertFiatRequest({

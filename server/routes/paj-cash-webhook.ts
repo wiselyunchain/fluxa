@@ -9,6 +9,8 @@ import { shieldPublicBalance } from "../services/umbra";
 import { ENV } from "../_core/env";
 import crypto from "crypto";
 
+const ACCEPTED_MINTS = ENV.pajCashAcceptedMints.map((m) => m.trim()).filter(Boolean);
+
 type PajCashWebhookStatus = "INIT" | "PAID" | "COMPLETED" | "FAILED" | "CANCELLED";
 type PajCashTransactionType = "ON_RAMP" | "OFF_RAMP";
 
@@ -86,7 +88,8 @@ export function registerPajCashWebhook(app: Express): void {
       if (status === "COMPLETED") {
         if (txType === "ON_RAMP") {
           const wallet = await getUserWalletByChain(fiatRequest.userId, "solana");
-          const mint = body.mint ?? ENV.pajCashUsdcMint;
+          const rawMint = body.mint;
+          const mint = (rawMint && ACCEPTED_MINTS.includes(rawMint)) ? rawMint : ENV.pajCashUsdcMint;
           const usdtAmount = (body.amount ?? 0).toString();
 
           if (wallet && body.amount) {
@@ -115,12 +118,14 @@ export function registerPajCashWebhook(app: Express): void {
             confirmedAt: new Date(),
           });
         } else if (txType === "OFF_RAMP") {
+          const rawMint = body.mint;
+          const mint = (rawMint && ACCEPTED_MINTS.includes(rawMint)) ? rawMint : ENV.pajCashUsdcMint;
           await insertUserTransaction({
             userId: fiatRequest.userId,
             type: "withdrawal",
             status: "confirmed",
             fromChain: "SOLANA",
-            fromToken: body.mint ?? ENV.pajCashUsdcMint,
+            fromToken: mint,
             fromAmount: (body.amount ?? 0).toString(),
             toAmount: fiatRequest.amount,
             pajCashReference: ref,
