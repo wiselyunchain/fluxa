@@ -5,7 +5,7 @@ This document contains detailed prompts for the remaining major tasks in the Flu
 ---
 
 ## Task 1: Multichain Self-Custody & Wallet Adapters
-**Status**: 🔴 Not Started
+**Status**: ✅ Done / Implemented
 **Context**: FluxaX V2 currently uses an embedded custodial wallet model (where the user's Solana `mainKeypair` is encrypted in Postgres). Because the core of the app is its multichain feature powered by NEAR Intent, we need to allow users to connect their own self-custodial wallets across ALL supported ecosystems (e.g., Solana, EVM, etc.).
 
 > **Prompt for AI Model**:
@@ -41,7 +41,7 @@ This document contains detailed prompts for the remaining major tasks in the Flu
 ---
 
 ## Task 3: Paj Cash Webhook Security & Multi-Token Settlement
-**Status**: 🟡 Partially Implemented
+**Status**: ✅ Done / Implemented
 **Context**: The Paj Cash webhook handles state transitions but lacks cryptographic signature verification. Additionally, the system hardcodes USDC as the settlement token; we want to support USDT.
 
 > **Prompt for AI Model**:
@@ -58,7 +58,7 @@ This document contains detailed prompts for the remaining major tasks in the Flu
 ---
 
 ## Task 4: Admin Dashboard Sub-pages
-**Status**: 🟡 Skeletons Only
+**Status**: ✅ Done / Implemented
 **Context**: The backend has foundation tRPC procedures for administration, but the frontend lacks the actual dashboards for monitoring.
 
 > **Prompt for AI Model**:
@@ -75,7 +75,7 @@ This document contains detailed prompts for the remaining major tasks in the Flu
 ---
 
 ## Task 5: End-to-End Test Suite Completion
-**Status**: 🟡 Partially Implemented
+**Status**: ✅ Done / Implemented
 **Context**: We have `e2e_swap.spec.ts` working, but we lack E2E tests for the Deposit and Withdrawal flows.
 
 > **Prompt for AI Model**:
